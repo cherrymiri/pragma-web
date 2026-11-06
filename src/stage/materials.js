@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CAVITY_N, CAVITY_Y0, CAVITY_Y1 } from './liquid.js';
 
 // ---------- studio reflections: the dark-field rig from the Blender scene ----------
 export function buildEnvironment(renderer) {
@@ -12,7 +13,8 @@ export function buildEnvironment(renderer) {
   panel(5.5, 1, 1.0, 0.26, 9, 4, 0xf0f5ff);     // thin tall strip, right
   panel(-3.6, 0.5, 5, 2.2, 7, 1.6);            // broad key for the steel
   panel(3.8, 0.5, 4.6, 1.4, 7, 1.1);           // broad fill
-  panel(0, 0.3, 6, 1.6, 5, 0.1);                  // front wash, keeps the lid from going dark
+  panel(0, 0.3, 6, 2.4, 6, 0.42);                // front wash, keeps the lid from going dark
+  panel(0, -6, 2, 6, 5, 0.5);                    // low bounce for the lid when it is laid over
   panel(0, 7, 0, 7, 5, 0.9);                    // overhead
   panel(-3.5, 1, -4.5, 0.3, 8, 3, 0xeaf3ff);    // back edge lights
   panel(3.5, 1, -4.5, 0.3, 8, 3, 0xeaf3ff);
@@ -23,6 +25,8 @@ export function buildEnvironment(renderer) {
 }
 
 // ---------- glass: only what a clean surface adds (reflection), on top of what is behind it ----------
+export const sheen = { uSheen: { value: -1 } };   // the slow band of light in the closing moment
+
 export function glassMaterial({ veil = 0.03 } = {}) {
   const m = new THREE.MeshPhysicalMaterial({
     color: 0x000000, metalness: 0, roughness: 0.03, ior: 1.5, envMapIntensity: 0.42,
@@ -30,17 +34,19 @@ export function glassMaterial({ veil = 0.03 } = {}) {
   });
   m.onBeforeCompile = (sh) => {
     sh.uniforms.uVeil = { value: veil };
+    sh.uniforms.uSheen = sheen.uSheen;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vW;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vW; uniform float uVeil;')
+      .replace('#include <common>', '#include <common>\nvarying vec3 vW; uniform float uVeil, uSheen;')
       .replace('#include <emissivemap_fragment>', `
         float ndv = abs(dot(normalize(normal), normalize(vViewPosition)));
         float edge = pow(1.0 - ndv, 2.6);
         // the wall's thickness catching light, plus a faint soft card behind the body
         float card = exp(-pow(vW.x / 0.05, 2.0)) * smoothstep(0.0, 0.1, vW.y) * smoothstep(0.26, 0.1, vW.y);
-        totalEmissiveRadiance += vec3(0.8, 0.86, 0.93) * (edge * 0.1 + card * uVeil);`);
+        float band = exp(-pow((vW.y + vW.x * 0.55 - uSheen) / 0.035, 2.0));
+        totalEmissiveRadiance += vec3(0.8, 0.86, 0.93) * (edge * 0.1 + card * uVeil + band * (0.07 + edge * 0.5));`);
   };
   return m;
 }
@@ -59,6 +65,21 @@ const WAVE = /* glsl */ `
     return w * a + ring - exp(-r * r * 180000.0) * 0.0013 * uFlow;
   }`;
 
+// the water surface in world space: a plane kept level by gravity, plus the small waves
+const SURFACE = /* glsl */ `
+  uniform float uLevelY; uniform vec2 uSlope;
+  float pragmaSurface(vec2 p) { return uLevelY + dot(uSlope, p) + pragmaWave(p); }`;
+
+const CAVITY = /* glsl */ `
+  uniform mat4 uInv; uniform float uR[${CAVITY_N}];
+  bool inCavity(vec3 w) {
+    vec3 l = (uInv * vec4(w, 1.0)).xyz;
+    if (l.y < ${CAVITY_Y0.toFixed(5)} || l.y > ${CAVITY_Y1.toFixed(5)}) return false;
+    float f = (l.y - ${CAVITY_Y0.toFixed(5)}) / ${(CAVITY_Y1 - CAVITY_Y0).toFixed(5)} * ${(CAVITY_N - 1).toFixed(1)};
+    int i = int(floor(f)); int j = min(i + 1, ${CAVITY_N - 1});
+    return length(l.xz) < mix(uR[i], uR[j], fract(f));
+  }`;
+
 const SKY_DEEP = 'vec3(0.40, 0.70, 0.88)';
 const SKY_LIGHT = 'vec3(0.74, 0.90, 0.98)';
 
@@ -68,27 +89,24 @@ export function waterBodyMaterial(waves) {
     transparent: true, opacity: 0.82, depthWrite: false, side: THREE.FrontSide,
   });
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, waves);
+    Object.assign(sh.uniforms, waves, sheen);
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', `#include <common>
-        attribute vec2 aSurface; varying float vCap; varying vec3 vW; ${WAVE}`)
-      .replace('#include <project_vertex>', `
-        vCap = aSurface.y;
-        if (aSurface.x > 0.5) transformed.y += pragmaWave(transformed.xz);
-        #include <project_vertex>
-        vW = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
+      .replace('#include <common>', '#include <common>\nvarying vec3 vW;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying float vCap; varying vec3 vW; uniform float uLevelY, uTime, uFlow;`)
+        varying vec3 vW; uniform float uSheen; ${WAVE} ${SURFACE}`)
       .replace('#include <emissivemap_fragment>', `
-        if (vCap > 0.01) discard;
+        float top = pragmaSurface(vW.xz);
+        if (vW.y > top) discard;
         float ndv = abs(dot(normalize(normal), normalize(vViewPosition)));
-        float depth = clamp((uLevelY - vW.y) / 0.15, 0.0, 1.0);
+        float depth = clamp((top - vW.y) / 0.15, 0.0, 1.0);
         // light carried through the water: paler toward the glass, deeper through the middle
         vec3 c = mix(${SKY_LIGHT}, ${SKY_DEEP}, 0.34 + 0.34 * ndv + 0.12 * depth);
         float cx = sin(vW.x * 210.0 + vW.y * 60.0 + uTime * 0.7) * sin(vW.x * 120.0 - vW.y * 95.0 - uTime * 0.5);
         c *= 0.86 + 0.05 * cx + 0.16 * (1.0 - depth);
-        totalEmissiveRadiance += c * 0.27 + vec3(0.8, 0.92, 1.0) * pow(1.0 - ndv, 3.0) * 0.1;`);
+        float band = exp(-pow((vW.y + vW.x * 0.55 - uSheen) / 0.035, 2.0));
+        totalEmissiveRadiance += c * (0.27 + band * 0.1) + vec3(0.8, 0.92, 1.0) * pow(1.0 - ndv, 3.0) * 0.1;`);
   };
   return m;
 }
@@ -120,18 +138,20 @@ export function waterSurface(waves) {
     Object.assign(sh.uniforms, waves);
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        uniform float uLevelY, uRadius; varying vec2 vP; ${WAVE}`)
+        uniform float uRadius; uniform vec2 uCenter; varying vec2 vP; varying vec3 vW; ${WAVE} ${SURFACE}`)
       .replace('#include <begin_vertex>', `
-        vec3 transformed = vec3(position.x * uRadius, 0.0, position.z * uRadius);
+        vec3 transformed = vec3(position.x * uRadius + uCenter.x, 0.0, position.z * uRadius + uCenter.y);
         vP = transformed.xz;
-        transformed.y = uLevelY + pragmaWave(vP);`);
+        transformed.y = pragmaSurface(vP);
+        vW = transformed;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec2 vP; ${WAVE}`)
+        varying vec2 vP; varying vec3 vW; ${WAVE} ${SURFACE} ${CAVITY}`)
       .replace('#include <normal_fragment_begin>', `
+        if (!inCavity(vW)) discard;
         float e = 0.00035;
-        float h0 = pragmaWave(vP);
-        vec3 wn = normalize(vec3(h0 - pragmaWave(vP + vec2(e, 0.0)), e, h0 - pragmaWave(vP + vec2(0.0, e))));
+        float h0 = pragmaSurface(vP);
+        vec3 wn = normalize(vec3(h0 - pragmaSurface(vP + vec2(e, 0.0)), e, h0 - pragmaSurface(vP + vec2(0.0, e))));
         vec3 normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
         if (!gl_FrontFacing) normal = -normal;
         vec3 nonPerturbedNormal = normal;`)
@@ -243,6 +263,70 @@ export function createBubbles() {
   };
 }
 
+// ---------- leak: beads form on the seal, swell, let go, and land ----------
+export function createDrips() {
+  const MAX = 14;
+  const geo = new THREE.SphereGeometry(1, 16, 12);
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: 0x10242e, roughness: 0.04, ior: 1.33, envMapIntensity: 1.7, transparent: true, opacity: 0.9, depthWrite: false,
+    emissive: new THREE.Color(0.44, 0.66, 0.78), emissiveIntensity: 0.55,
+  });
+  const group = new THREE.Group();
+  const up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
+  const drops = Array.from({ length: MAX }, () => {
+    const m = new THREE.Mesh(geo, mat); m.visible = false; m.renderOrder = 9; group.add(m);
+    return { m, on: false, stuck: true, age: 0, grow: 1, size: 0.001, ang: 0, vel: new THREE.Vector3() };
+  });
+  const rings = Array.from({ length: 6 }, () => {
+    const m = new THREE.Mesh(new THREE.RingGeometry(0.82, 1, 40), new THREE.MeshBasicMaterial({ color: 0x9fd3ee, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    m.rotation.x = -Math.PI / 2; m.visible = false; m.renderOrder = 1; group.add(m);
+    return { m, age: 0 };
+  });
+  return {
+    group,
+    active: () => drops.some((d) => d.on) || rings.some((r) => r.m.visible),
+    spawn(angle, big) {
+      const d = drops.find((x) => !x.on);
+      if (!d) return;
+      Object.assign(d, { on: true, stuck: true, age: 0, grow: 0.5 + Math.random() * 0.4, size: 0.0011 + big * 0.0006 + Math.random() * 0.0003, ang: angle });
+      d.vel.set(0, 0, 0); d.m.visible = true;
+    },
+    // seat(angle, out) gives the world point on the seal; g is the on-screen gravity
+    update(dt, seat, g, onDetach) {
+      for (const d of drops) {
+        if (!d.on) continue;
+        d.age += dt;
+        if (d.stuck) {
+          seat(d.ang, d.m.position);
+          const k = Math.min(1, d.age / d.grow);
+          d.m.scale.setScalar(d.size * (0.3 + 0.7 * k));
+          d.m.position.y -= d.size * 0.5 * k;
+          if (k >= 1) { d.stuck = false; onDetach(); }
+        } else {
+          d.vel.y -= g * dt;
+          d.m.position.addScaledVector(d.vel, dt);
+          const stretch = 1 + Math.min(0.7, -d.vel.y * 0.55);
+          d.m.scale.set(d.size / Math.sqrt(stretch), d.size * stretch, d.size / Math.sqrt(stretch));
+          if (d.m.position.y < 0.0012) {
+            d.on = false; d.m.visible = false;
+            const r = rings.find((x) => !x.m.visible);
+            if (r) { r.age = 0; r.m.visible = true; r.m.position.set(d.m.position.x, 0.0006, d.m.position.z); }
+          }
+        }
+      }
+      for (const r of rings) {
+        if (!r.m.visible) continue;
+        r.age += dt;
+        const k = r.age / 0.7;
+        r.m.scale.setScalar(0.0015 + 0.012 * k);
+        r.m.material.opacity = 0.34 * (1 - k);
+        if (k >= 1) r.m.visible = false;
+      }
+    },
+    clear() { drops.forEach((d) => { d.on = false; d.m.visible = false; }); rings.forEach((r) => { r.m.visible = false; }); },
+  };
+}
+
 // ---------- nozzle: a short clear tube that fades out upward ----------
 export function createNozzle(tipY) {
   const group = new THREE.Group();
@@ -272,17 +356,17 @@ export const floorShader = {
   name: 'PragmaFloor',
   uniforms: {
     color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null },
-    uLid: { value: new THREE.Vector3() },
+    uLid: { value: new THREE.Vector3() }, uBody: { value: 1 },
   },
   vertexShader: `uniform mat4 textureMatrix; varying vec4 vUv4; varying vec3 vW;
     void main() { vUv4 = textureMatrix * vec4(position, 1.0); vW = (modelMatrix * vec4(position, 1.0)).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform vec3 uLid; varying vec4 vUv4; varying vec3 vW;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform vec3 uLid; uniform float uBody; varying vec4 vUv4; varying vec3 vW;
     void main() {
       vec3 bg = vec3(0.0033, 0.0037, 0.0044);
       float r = length(vW.xz);
       vec3 base = bg + vec3(0.012, 0.0135, 0.016) * exp(-r * r / 0.05);
-      float shade = 1.0 - 0.75 * smoothstep(0.075, 0.018, r);
+      float shade = 1.0 - 0.75 * uBody * smoothstep(0.075, 0.018, r);
       float rl = length(vW.xz - uLid.xy);
       shade *= 1.0 - 0.7 * uLid.z * smoothstep(0.075, 0.02, rl);
       vec4 refl = texture2DProj(tDiffuse, vUv4);

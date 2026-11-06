@@ -2,20 +2,30 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { store } from '../store.js';
-import { buildEnvironment, glassMaterial, waterBodyMaterial, waterSurface, createStream, createBubbles, createNozzle, floorShader } from './materials.js';
+import { buildEnvironment, glassMaterial, waterBodyMaterial, waterSurface, createStream, createBubbles, createNozzle, createDrips, floorShader, sheen } from './materials.js';
+import { Cavity, CAVITY_Y0, CAVITY_Y1 } from './liquid.js';
 
 // Values fixed by the Blender model (metres, Y up)
 const CLOSED_Y = 0.183;
 const PITCH = 0.004;
 const FREE_TURNS = 2.25;      // thread fully disengaged
 const FULL_MM = 165;
-const CORNER_MM = 16.27;
 const FLOOR_MM = 10.45;
 const FLOW = 3.4e-5;          // m³/s, about 13 seconds from empty to full
 const GRAVITY = 9.8 * 0.42;   // the model is small: slowed so a fall reads at human scale
 const NOZZLE_Y = 0.238;
 const REST_Y = 0.0021;
 const LID_R = 0.0385;
+
+// Tilt and seal
+const MAX_TILT = 1.85;        // past horizontal, so even a little water can run down to the lid
+const MAX_TOWARD = 1.0;       // leaning toward or away from the viewer is limited, the object stays readable
+const SEAL_LOCK = 0.84;       // lid closed at least this far: the gasket seals (never shown)
+const WET_TO_LEAK = 0.45;     // seconds the seal stays under water before a loose lid weeps
+const WET_TO_HOLD = 1.9;      // seconds under water that prove a closed lid holds
+const PIVOT_Y = 0.1;          // the middle of the tumbler
+const up = new THREE.Vector3(0, 1, 0);
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -27,7 +37,20 @@ export class Stage {
     this.pour = false;
     this.flow = 0;           // 0…1 stream reaching the water
     this.agitation = 0;
-    this.heightMm = FLOOR_MM;
+    this.volume = 0;         // m³ of water: the one source of truth for the level
+    this.levelY = FLOOR_MM / 1000;
+    this.tilt = new THREE.Vector2();        // lean direction × angle (x: sideways, y: toward the viewer)
+    this.tiltTarget = new THREE.Vector2();
+    this.tiltVel = new THREE.Vector2();
+    this.tiltK = 7;
+    this.slosh = new THREE.Vector2();
+    this.sloshVel = new THREE.Vector2();
+    this.plane = { d: FLOOR_MM / 1000, c: 1, s: 0, key: '' };
+    this.wetTime = 0;
+    this.seq = 0;            // clock of the current automatic moment (leak, success)
+    this.dripsLeft = 0; this.dripClock = 0; this.leak = 0;
+    this.zoom = 1;
+    this.speed = 1;
     this.streamHead = -1;    // seconds since opening, -1 = never opened
     this.streamTail = -1;    // seconds since closing, -1 = open
     this.turns = FREE_TURNS;
@@ -80,7 +103,12 @@ export class Stage {
       ? await loader.parseAsync(Uint8Array.from(atob(inline), (c) => c.charCodeAt(0)).buffer, '')
       : await loader.loadAsync(import.meta.env.BASE_URL + 'models/PRAGMA_Tumbler.glb');
     const root = (this.root = gltf.scene);
-    this.scene.add(root);
+    this.pivot = new THREE.Group();
+    this.pivot.position.y = PIVOT_Y;
+    root.position.y = -PIVOT_Y;
+    this.pivot.add(root);
+    this.scene.add(this.pivot);
+    this.pivot.updateMatrixWorld(true);
     const get = (n) => root.getObjectByName(n);
     this.lid = get('Lid');
     this.water = get('Water');
@@ -103,6 +131,9 @@ export class Stage {
     this.bubbles = createBubbles(); this.scene.add(this.bubbles.points);
     this.nozzle = createNozzle(NOZZLE_Y); this.scene.add(this.nozzle);
 
+    this.drips = createDrips(); this.scene.add(this.drips.group);
+    this.bodyHit = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.056, 0.235, 12), new THREE.MeshBasicMaterial({ visible: false }));
+    this.pivot.add(this.bodyHit);
     this.lidHit = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
     this.scene.add(this.lidHit);
 
@@ -115,69 +146,71 @@ export class Stage {
   }
 
   setupWater() {
-    const m = this.water;
-    const g = m.geometry;
-    const pos = g.attributes.position;
-    const flags = new Float32Array(pos.count * 2);
-    let rimIdx = 0, rimR = 0;
-    for (let i = 0; i < pos.count; i++) {
-      if (Math.abs(pos.getY(i) - FULL_MM / 1000) < 1e-5) {
-        const rr = Math.hypot(pos.getX(i), pos.getZ(i));
-        if (rr > rimR) { rimR = rr; rimIdx = i; }
-      }
-    }
-    for (let i = 0; i < pos.count; i++) {
-      if (Math.abs(pos.getY(i) - FULL_MM / 1000) < 1e-5) {
-        const rr = Math.hypot(pos.getX(i), pos.getZ(i));
-        flags[i * 2] = 1;                                  // follows the surface
-        flags[i * 2 + 1] = rr < rimR - 1e-5 ? 1 : 0;       // top cap: drawn by the fine surface mesh
-      }
-    }
-    g.setAttribute('aSurface', new THREE.BufferAttribute(flags, 2));
-    this.rimIdx = rimIdx;
-    const d = m.morphTargetDictionary;
-    this.iLower = d.Level_Lower; this.iDrain = d.Level_Drain;
-    this.morphL = g.morphAttributes.position[this.iLower];
-    this.morphD = g.morphAttributes.position[this.iDrain];
-    m.morphTargetInfluences[d.Surface_Ripple] = 0;
+    // the shapes come from the inner wall itself; the exported Water mesh stays in the file, hidden
+    const inner = this.root.getObjectByName('Tumbler_InnerWall');
+    this.root.position.y = 0; this.pivot.position.y = 0; this.pivot.updateMatrixWorld(true);
+    this.cavity = new Cavity(inner);
+    this.root.position.y = -PIVOT_Y; this.pivot.position.y = PIVOT_Y; this.pivot.updateMatrixWorld(true);
+    this.water.visible = false;
+    this.maxVolume = this.cavity.volume(FULL_MM / 1000, 1, 0);
 
     this.waves = {
       uTime: { value: 0 }, uAgit: { value: 0 }, uFlow: { value: 0 },
-      uLevelY: { value: 0 }, uRadius: { value: 0.03 },
+      uLevelY: { value: 0 }, uSlope: { value: new THREE.Vector2() },
+      uRadius: { value: 0.03 }, uCenter: { value: new THREE.Vector2() },
+      uInv: { value: new THREE.Matrix4() }, uR: { value: Array.from(this.cavity.table) },
     };
-    m.material = waterBodyMaterial(this.waves);
-    m.frustumCulled = false;
-    m.renderOrder = 2;
+    const body = (this.body = new THREE.Mesh(this.cavity.geometry(), waterBodyMaterial(this.waves)));
+    body.name = 'Water_Web';
+    body.frustumCulled = false;
+    body.renderOrder = 2;
+    this.water.parent.add(body);
     this.surface = waterSurface(this.waves);
     this.surface.renderOrder = 3;
     this.scene.add(this.surface);
     this.applyLevel();
+    this.updateSurface();
   }
 
+  // upright level, from the volume
   applyLevel() {
-    const h = this.heightMm;
-    const l = h >= CORNER_MM ? (FULL_MM - h) / (FULL_MM - CORNER_MM) : 1;
-    const dr = h >= CORNER_MM ? 0 : (CORNER_MM - h) / (CORNER_MM - FLOOR_MM);
-    const m = this.water;
-    m.morphTargetInfluences[this.iLower] = l;
-    m.morphTargetInfluences[this.iDrain] = dr;
-    const p = m.geometry.attributes.position, i = this.rimIdx;
-    const x = p.getX(i) + l * this.morphL.getX(i) + dr * this.morphD.getX(i);
-    const y = p.getY(i) + l * this.morphL.getY(i) + dr * this.morphD.getY(i);
-    const z = p.getZ(i) + l * this.morphL.getZ(i) + dr * this.morphD.getZ(i);
-    this.levelY = y;
-    this.waves.uLevelY.value = y;
-    this.waves.uRadius.value = Math.hypot(x, z);
-    const on = h > FLOOR_MM + 0.05;
-    m.visible = on;
+    this.uprightY = this.volume > 0 ? this.cavity.solve(this.volume, 1, 0) : CAVITY_Y0;
+    const level = this.volume >= this.maxVolume ? 1 : clamp((this.uprightY - CAVITY_Y0) / (FULL_MM / 1000 - CAVITY_Y0), 0, 1);
+    const on = this.volume > 1e-7;
+    this.body.visible = on;
     this.surface.visible = on;
-    store.set({ waterLevel: clamp((h - FLOOR_MM) / (FULL_MM - FLOOR_MM), 0, 1) });
+    store.set({ waterLevel: level });
+  }
+
+  // the level plane in world space, kept flat by gravity and holding exactly this.volume
+  updateSurface() {
+    const w = this.waves;
+    const axis = new THREE.Vector3(0, 1, 0).applyQuaternion(this.pivot.quaternion);
+    const n = new THREE.Vector3(this.slosh.x, 1, this.slosh.y).normalize();
+    const c = clamp(n.dot(axis), -1, 1), s = Math.sqrt(1 - c * c);
+    const key = c.toFixed(4) + this.volume.toFixed(10);
+    if (key !== this.plane.key) {
+      this.plane.d = this.volume > 0 ? this.cavity.solve(this.volume, c, s) : CAVITY_Y0;
+      this.plane.c = c; this.plane.s = s; this.plane.key = key;
+    }
+    const d = this.plane.d;
+    this.root.getWorldPosition(this._o ??= new THREE.Vector3());
+    const D = d + n.dot(this._o);
+    w.uLevelY.value = D / n.y;
+    w.uSlope.value.set(-n.x / n.y, -n.z / n.y);
+    w.uInv.value.copy(this.root.matrixWorld).invert();
+    // centre the fine surface mesh on the part of the plane that lies inside the tumbler
+    const along = clamp(c > 0.2 ? d / c : 0.1 + d * c, 0.03, 0.18);
+    const p = this._o.clone().addScaledVector(axis, along);
+    w.uCenter.value.set(p.x, p.z);
+    w.uRadius.value = Math.min(0.15, 0.0425 / Math.max(Math.abs(c), 0.27));
+    this.levelY = w.uLevelY.value;
   }
 
   // ---- pouring ----
   setPour(on) {
     const s = store.get();
-    if (on && (s.waterLevel >= 1 || !s.ready || this.lidOverMouth())) return;
+    if (on && (s.waterLevel >= 1 || !s.ready || s.step !== 1)) return;
     if (on === this.pour) return;
     this.pour = on;
     if (on) { this.streamHead = 0; this.streamTail = -1; } else { this.streamTail = 0; }
@@ -199,25 +232,24 @@ export class Stage {
     const landed = this.pour && this.streamHead >= fallTime;
 
     if (landed) {
-      const r = this.waves.uRadius.value;
-      const area = Math.PI * r * r;
-      const before = this.heightMm;
-      this.heightMm = Math.min(FULL_MM, before + ((FLOW / Math.max(area, 3e-4)) * dt) * 1000);
+      this.volume = Math.min(this.maxVolume, this.volume + FLOW * dt);
       this.applyLevel();
       if (!store.get().hasPoured) store.set({ hasPoured: true });
-      if (this.heightMm >= FULL_MM) this.setPour(false);
+      if (this.volume >= this.maxVolume) this.setPour(false);
     }
     this.flow = damp(this.flow, landed ? 1 : 0, landed ? 9 : 4, dt);
-    this.agitation = damp(this.agitation, landed ? 1 : 0, landed ? 3 : 0.8, dt);
-    Object.assign(this.waves.uTime, { value: t });
+    const moving = clamp(this.tiltVel.length() * 0.6, 0, 1);
+    const stir = Math.max(landed ? 1 : 0, moving);
+    this.agitation = damp(this.agitation, stir, stir > this.agitation ? 3 : 0.8, dt);
+    this.waves.uTime.value = t;
     this.waves.uAgit.value = this.agitation;
     this.waves.uFlow.value = this.flow;
 
     const flowing = this.pour || (this.streamTail >= 0 && tail < drop);
     this.stream.update({ t, tipY: NOZZLE_Y, bottomY: fallTo, head: Math.min(head, drop), tail: Math.min(tail, drop), visible: flowing && this.streamHead >= 0 });
-    this.bubbles.update(dt, { flow: this.flow, levelY: this.levelY, radius: this.waves.uRadius.value, floorY: FLOOR_MM / 1000 });
+    this.bubbles.update(dt, { flow: this.flow, levelY: this.levelY, radius: 0.03, floorY: FLOOR_MM / 1000 });
 
-    const away = store.get().lidMode === 'dragging' || this.lidOverMouth();
+    const away = store.get().step > 1;
     this.nozzleLift = damp(this.nozzleLift, away ? 1 : 0, 3.5, dt);
     this.nozzle.position.y = this.nozzleLift * 0.05;
     this.nozzle.traverse((o) => { if (o.isMesh) o.material.opacity = 1 - this.nozzleLift * 0.999; });
@@ -247,9 +279,51 @@ export class Stage {
     return this.raycaster.ray.intersectPlane(plane, out) ? out : null;
   }
 
+  hitsBody(e) {
+    this.raycaster.setFromCamera(this.ndc(e), this.camera);
+    return this.raycaster.intersectObject(this.bodyHit).length > 0;
+  }
+
   canTouchLid() {
+    return store.get().step === 2 && !this.pour;
+  }
+
+  canAdjust() {
     const s = store.get();
-    return s.hasPoured && !this.pour;
+    return s.lidAligned && (s.step === 2 || s.step === 5);
+  }
+
+  // ---- the flow between steps ----
+  closeLid() {
+    if (store.get().step !== 1) return;
+    this.setPour(false);
+    store.set({ step: 2 });
+  }
+
+  startTilt() {
+    if (!this.canAdjust() || store.get().lidLock < 0.02) return;
+    this.turnsTarget = this.turns;
+    this.wetTime = 0;
+    this.tiltK = 7;
+    this.pointer.id = null; this.pointer.intent = null;
+    store.set({ step: 3, verdict: 'none' });
+  }
+
+  reset() {
+    this.setPour(false);
+    this.streamHead = -1; this.streamTail = -1;
+    this.volume = 0;
+    this.turns = this.turnsTarget = FREE_TURNS;
+    this.tiltTarget.set(0, 0); this.tilt.set(0, 0); this.tiltVel.set(0, 0);
+    this.slosh.set(0, 0); this.sloshVel.set(0, 0);
+    this.wetTime = 0; this.seq = 0; this.dripsLeft = 0; this.leak = 0;
+    this.pointer.id = null; this.pointer.intent = null;
+    this.drips.clear();
+    sheen.uSheen.value = -1;
+    this.lid.position.copy(this.home);
+    this.lid.rotation.y = FREE_TURNS * Math.PI * 2;
+    store.set({ step: 1, hasPoured: false, lidMode: 'home', lidAligned: false, lidLock: 0, verdict: 'none', ended: false, canTilt: false, leakage: 0 });
+    this.applyLevel();
   }
 
   down(e) {
@@ -257,7 +331,11 @@ export class Stage {
     const s = store.get();
     const p = this.pointer;
     if (p.id !== null) return;
-    if (s.lidMode === 'aligned') {
+    if (s.step === 3) {
+      if (e.pointerType === 'mouse' && !this.hitsBody(e)) return;
+      Object.assign(p, { id: e.pointerId, x: e.clientX, y: e.clientY, sx: this.tiltTarget.x, sy: this.tiltTarget.y, downX: e.clientX, downY: e.clientY, intent: 'tilt' });
+      this.renderer.domElement.style.cursor = 'grabbing';
+    } else if (this.canAdjust()) {
       // on touch the whole stage turns the lid, so a finger never has to hide it
       if (e.pointerType === 'mouse' && !this.hitsLid(e)) return;
       Object.assign(p, { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, intent: 'turn', onLid: this.hitsLid(e) });
@@ -269,7 +347,7 @@ export class Stage {
   }
 
   startDrag(e) {
-    store.set({ lidMode: 'dragging', lidAligned: false, step: 2 });
+    store.set({ lidMode: 'dragging', lidAligned: false });
     const w = this.pointerToWorld(e);
     if (w) this.dragTarget.copy(w);
   }
@@ -277,13 +355,23 @@ export class Stage {
   move(e) {
     const p = this.pointer;
     if (p.id === null) {
-      const can = this.lid && e.pointerType === 'mouse' && this.hitsLid(e) && (this.canTouchLid() || store.get().lidAligned);
+      if (!this.lid || e.pointerType !== 'mouse') return;
+      const can = store.get().step === 3 ? this.hitsBody(e) : this.hitsLid(e) && (this.canTouchLid() || this.canAdjust());
       this.renderer.domElement.style.cursor = can ? 'grab' : '';
       return;
     }
     if (e.pointerId !== p.id) return;
     e.preventDefault();
-    if (p.intent === 'drag') {
+    if (p.intent === 'tilt') {
+      // the same pull gives the same lean on any screen
+      const b = this.renderer.domElement.getBoundingClientRect();
+      const per = MAX_TILT / (0.46 * Math.min(b.width, b.height));
+      let x = p.sx + (e.clientX - p.downX) * per;
+      let y = clamp(p.sy + (e.clientY - p.downY) * per, -MAX_TOWARD, MAX_TOWARD);
+      const len = Math.hypot(x, y);
+      if (len > MAX_TILT) { x *= MAX_TILT / len; y *= MAX_TILT / len; }
+      this.tiltTarget.set(x, y);
+    } else if (p.intent === 'drag') {
       const w = this.pointerToWorld(e);
       if (w) this.dragTarget.copy(w);
       this.renderer.domElement.style.cursor = 'grabbing';
@@ -319,7 +407,7 @@ export class Stage {
       if (near) {
         this.turns = this.turnsTarget = FREE_TURNS;
         store.set({ lidMode: 'seating' });
-      } else store.set({ lidMode: 'returning', step: store.get().hasPoured ? 2 : 1 });
+      } else store.set({ lidMode: 'returning' });
     }
   }
 
@@ -327,7 +415,7 @@ export class Stage {
 
   wheel(e) {
     e.preventDefault();
-    if (!store.get().lidAligned) return;
+    if (!this.canAdjust()) return;
     let dy = e.deltaY;
     if (e.deltaMode === 1) dy *= 32; else if (e.deltaMode === 2) dy *= 400;
     this.addTurns(-clamp(dy, -160, 160) * 0.0011);   // wheel down closes, up opens
@@ -364,7 +452,7 @@ export class Stage {
       pos.y = damp(pos.y, y, 7, dt);
       if (Math.hypot(pos.x, pos.z) < 0.0002 && Math.abs(pos.y - y) < 0.0002) {
         pos.set(0, y, 0);
-        store.set({ lidMode: 'aligned', lidAligned: true, step: 2 });
+        store.set({ lidMode: 'aligned', lidAligned: true });
       }
     } else if (s.lidMode === 'aligned') {
       this.turns = damp(this.turns, this.turnsTarget, 11, dt);
@@ -372,10 +460,12 @@ export class Stage {
       pos.set(0, CLOSED_Y + PITCH * this.turns, 0);
       lid.rotation.y = this.turns * Math.PI * 2;
     }
+    const lock = s.lidMode === 'aligned' ? 1 - this.turns / FREE_TURNS : 0;
     store.set({
+      canTilt: s.lidMode === 'aligned' && (s.step === 2 || s.step === 5) && lock >= 0.02,
       lidTurns: this.turns,
       lidRotation: lid.rotation.y,
-      lidLock: s.lidMode === 'aligned' ? 1 - this.turns / FREE_TURNS : 0,
+      lidLock: lock,
       lidPosition: pos.x + ',' + pos.y + ',' + pos.z,
     });
   }
@@ -394,17 +484,128 @@ export class Stage {
     const hNeed = 0.235, wNeed = narrow ? 0.098 : 0.19;
     const dist = Math.max(hNeed / tan, wNeed / (tan * a));
     const cy = narrow ? 0.092 : 0.1;
-    cam.position.set(0, cy + dist * 0.09, dist);
-    cam.lookAt(0, cy, 0);
+    this.look = new THREE.Vector3(0, cy, 0);
+    this.camBase = new THREE.Vector3(0, cy + dist * 0.09, dist);
+    this.narrow = narrow;
+    this.placeCamera();
     cam.updateProjectionMatrix();
   }
 
+  placeCamera() {
+    this.camera.position.copy(this.look).addScaledVector(this.camBase.clone().sub(this.look), this.zoom);
+    this.camera.lookAt(this.look);
+  }
+
+  // ---- tilting, judging, and what follows ----
+  seat(angle, out) {
+    // a point on the gap between gasket and shoulder, in world space
+    const gapY = (this.lid.position.y - 0.002 + 0.181) / 2;
+    out.set(Math.cos(angle) * 0.0381, gapY, Math.sin(angle) * 0.0381);
+    return this.root.localToWorld(out);
+  }
+
+  downhill() {
+    const d = new THREE.Vector3(0, -1, 0).applyQuaternion(this.pivot.quaternion.clone().invert());
+    return Math.atan2(d.z, d.x);
+  }
+
+  updateTilt(dt) {
+    const s = store.get();
+    const prevX = this.tilt.x, prevY = this.tilt.y;
+    const free = s.step === 3 && this.pointer.intent !== 'tilt';
+    if (free) this.tiltTarget.multiplyScalar(Math.exp(-1.6 * dt));    // let go and it eases back upright
+    this.tilt.x = damp(this.tilt.x, this.tiltTarget.x, this.tiltK, dt);
+    this.tilt.y = damp(this.tilt.y, this.tiltTarget.y, this.tiltK, dt);
+    this.tiltVel.set((this.tilt.x - prevX) / Math.max(dt, 1e-3), (this.tilt.y - prevY) / Math.max(dt, 1e-3));
+
+    const angle = this.tilt.length();
+    const axis = new THREE.Vector3(this.tilt.y, 0, -this.tilt.x);
+    if (angle > 1e-5) this.pivot.quaternion.setFromAxisAngle(axis.normalize(), angle); else this.pivot.quaternion.identity();
+    // lifted off the table as it leans; it never dips below the floor
+    const contact = 0.1 * Math.abs(Math.cos(angle)) + 0.0385 * Math.sin(Math.min(angle, Math.PI / 2));
+    this.pivot.position.y = Math.max(PIVOT_Y + 0.042 * smooth(0.1, 1.2, angle), angle > 0.001 ? contact : PIVOT_Y);
+
+    // the water lags behind the glass, then swings back
+    const w = 7.5, z = 0.2;
+    const tx = clamp(-this.tiltVel.x * 0.16, -0.3, 0.3), ty = clamp(-this.tiltVel.y * 0.16, -0.3, 0.3);
+    const steps = Math.ceil(dt / 0.012), h = dt / Math.max(steps, 1);   // stays stable on slow devices
+    for (let i = 0; i < steps; i++) {
+      this.sloshVel.x += (-(this.slosh.x - tx) * w * w - this.sloshVel.x * 2 * z * w) * h;
+      this.sloshVel.y += (-(this.slosh.y - ty) * w * w - this.sloshVel.y * 2 * z * w) * h;
+      this.slosh.addScaledVector(this.sloshVel, h);
+    }
+    this.slosh.x = clamp(this.slosh.x, -0.36, 0.36); this.slosh.y = clamp(this.slosh.y, -0.36, 0.36);
+
+    const wet = this.volume > 0 && this.cavity.sealWet(this.plane.d, this.plane.c, this.plane.s);
+    store.set({ tiltAngle: angle, sealWet: wet });
+
+    if (s.step === 3) {
+      this.wetTime = wet ? this.wetTime + dt : Math.max(0, this.wetTime - dt * 2);
+      if (s.lidLock < SEAL_LOCK) {
+        if (this.wetTime > WET_TO_LEAK) this.beginLeak(s.lidLock);
+      } else if (this.wetTime > WET_TO_HOLD) {
+        this.tiltTarget.copy(this.tilt);
+        this.pointer.intent = null; this.pointer.id = null;
+        this.seq = 0;
+        store.set({ step: 6, verdict: 'sealed' });
+      }
+    } else if (s.step === 4) {
+      this.seq += dt;
+      this.dripClock -= dt;
+      if (this.dripsLeft > 0 && this.dripClock <= 0) {
+        this.drips.spawn(this.downhill() + (Math.random() - 0.5) * 0.7, this.leak);
+        this.dripsLeft--;
+        this.dripClock = 0.95 - this.leak * 0.5 + Math.random() * 0.25;
+      }
+      if (this.dripsLeft === 0 && !this.drips.active()) {
+        this.tiltTarget.set(0, 0);
+        this.tiltK = 1.9;
+        if (angle < 0.015) { this.tilt.set(0, 0); store.set({ step: 5 }); this.tiltK = 7; }
+      }
+    } else if (s.step === 6) {
+      this.seq += dt;
+      if (this.seq > 1.5 && !s.ended) { this.tiltTarget.set(0, 0); this.tiltK = 1.25; }
+      if (angle < 0.01 && !this.sheenStart && this.seq > 1.5) this.sheenStart = this.seq + 0.9;
+      if (this.sheenStart) {
+        const k = (this.seq - this.sheenStart) / 3.2;
+        if (k >= 0) sheen.uSheen.value = k < 1 ? -0.05 + k * 0.42 : -1;
+        if (k >= 1) { this.sheenStart = 0; store.set({ ended: true }); }
+      }
+    }
+    this.drips.update(dt, (a, out) => this.seat(a, out), GRAVITY, () => {
+      this.volume = Math.max(this.volume * 0.5, this.volume - 4e-7);    // a drop is a drop: the level barely moves
+      this.applyLevel();
+    });
+  }
+
+  beginLeak(lock) {
+    // the looser the lid, the more it lets go; never enough to empty the tumbler
+    this.leak = clamp((SEAL_LOCK - lock) / SEAL_LOCK, 0, 1);
+    this.dripsLeft = 3 + Math.round(this.leak * 4);
+    this.dripClock = 0;
+    this.seq = 0;
+    this.tiltTarget.copy(this.tilt);
+    this.pointer.intent = null; this.pointer.id = null;
+    this.renderer.domElement.style.cursor = '';
+    store.set({ step: 4, verdict: 'leak', leakage: this.leak });
+  }
+
   frame() {
-    const dt = Math.min(this.clock.getDelta(), 0.1);
+    const dt = Math.min(this.clock.getDelta(), 0.1) * this.speed;
     const t = this.clock.elapsedTime;
     this.updateLid(dt);
+    this.updateTilt(dt);
+    this.scene.updateMatrixWorld();
+    this.updateSurface();
     this.updateWater(dt, t);
-    this.floor.material.uniforms.uLid.value.set(this.lid.position.x, this.lid.position.z, clamp(1 - this.lid.position.y / 0.09, 0, 1));
+    const step = store.get().step;
+    const wide = this.narrow && (step === 3 || step === 4 || (step === 6 && this.tilt.length() > 0.02));
+    this.zoom = damp(this.zoom, wide ? 1.22 : 1, 2.4, dt);
+    this.placeCamera();
+    const u = this.floor.material.uniforms;
+    const lifted = store.get().lidAligned ? 0 : clamp(1 - this.lid.position.y / 0.09, 0, 1);
+    u.uLid.value.set(this.lid.position.x, this.lid.position.z, lifted);
+    u.uBody.value = clamp(1 - (this.pivot.position.y - PIVOT_Y) / 0.03, 0, 1);
     this.renderer.render(this.scene, this.camera);
   }
 

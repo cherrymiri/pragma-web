@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { store } from './store.js';
 import { Stage } from './stage/Stage.js';
 
@@ -9,8 +9,6 @@ export default function App() {
   const host = useRef(null);
   const stage = useRef(null);
   const s = useStore();
-  const [prompted2, setPrompted2] = useState(false);
-
   useEffect(() => {
     const st = new Stage(host.current);
     window.__PRAGMA_STAGE = st;
@@ -18,14 +16,6 @@ export default function App() {
     st.load().catch((e) => { console.error(e); store.set({ error: true }); });
     return () => st.dispose();
   }, []);
-
-  // the prompt moves on shortly after the first pour stops, and steps back if they pour again
-  useEffect(() => {
-    if (s.isPouring) { setPrompted2(false); return; }
-    if (!s.hasPoured) return;
-    const t = setTimeout(() => setPrompted2(true), 900);
-    return () => clearTimeout(t);
-  }, [s.isPouring, s.hasPoured]);
 
   const pourOn = (e) => { e.preventDefault(); e.currentTarget.setPointerCapture?.(e.pointerId); stage.current?.setPour(true); };
   const pourOff = () => stage.current?.setPour(false);
@@ -38,15 +28,12 @@ export default function App() {
     return () => { window.removeEventListener('blur', off); document.removeEventListener('visibilitychange', hide); };
   }, []);
 
-  const holding = s.lidMode === 'dragging' || s.lidMode === 'seating' || s.lidAligned;
-  const lidStage = s.step === 2 || holding || (s.hasPoured && prompted2);
-  const showPour = !holding;
   const full = s.waterLevel >= 1;
-
-  let prompt = '사랑을 원하는 만큼 따라보세요.';
-  if (lidStage) prompt = '뚜껑을 가져와 돌려 닫아보세요.';
-  let sub = '';
-  if (s.lidAligned) sub = coarse ? '뚜껑을 좌우로 밀어 돌려보세요' : '휠을 아래로 굴려 돌려보세요';
+  const PROMPTS = { 1: '사랑을 원하는 만큼 따라보세요.', 2: '뚜껑을 가져와 돌려 닫아보세요.', 3: '텀블러를 기울여보세요.', 4: '', 5: '조금 더 맞춰볼까요?', 6: '' };
+  const prompt = PROMPTS[s.step];
+  const adjusting = (s.step === 2 || s.step === 5) && s.lidAligned;
+  const sub = adjusting ? (coarse ? '뚜껑을 좌우로 밀어 돌려보세요' : '휠을 아래로 굴려 돌려보세요') : '';
+  const canClose = s.step === 1 && s.waterLevel >= 0.02;
 
   return (
     <div className={'app' + (s.ready ? ' is-ready' : '')}>
@@ -58,18 +45,25 @@ export default function App() {
       <div className="hud-bottom">
         <p className="prompt" aria-live="polite" key={prompt}>{prompt}</p>
         <p className="sub" key={sub || 'none'}>{sub}</p>
-        <button
-          type="button"
-          className={'pour' + (s.isPouring ? ' is-on' : '') + (showPour ? '' : ' is-away')}
-          disabled={full || !s.ready || !showPour}
-          onPointerDown={pourOn}
-          onPointerUp={pourOff}
-          onPointerCancel={pourOff}
-          onLostPointerCapture={pourOff}
-          onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); stage.current?.setPour(true); } }}
-          onKeyUp={(e) => { if (e.key === ' ' || e.key === 'Enter') pourOff(); }}
-          onContextMenu={(e) => e.preventDefault()}
-        >사랑 따르기</button>
+        <div className="actions">
+          {s.step === 1 && (
+            <button
+              type="button"
+              className={'pour' + (s.isPouring ? ' is-on' : '')}
+              disabled={full || !s.ready}
+              onPointerDown={pourOn}
+              onPointerUp={pourOff}
+              onPointerCancel={pourOff}
+              onLostPointerCapture={pourOff}
+              onKeyDown={(e) => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); stage.current?.setPour(true); } }}
+              onKeyUp={(e) => { if (e.key === ' ' || e.key === 'Enter') pourOff(); }}
+              onContextMenu={(e) => e.preventDefault()}
+            >사랑 따르기</button>
+          )}
+          {canClose && <button type="button" className="step-btn" onClick={() => stage.current?.closeLid()}>뚜껑 닫기</button>}
+          {s.canTilt && <button type="button" className="step-btn" onClick={() => stage.current?.startTilt()}>기울여 보기</button>}
+          {s.ended && <button type="button" className="step-btn" onClick={() => stage.current?.reset()}>다시 체험하기</button>}
+        </div>
       </div>
       {!s.ready && <div className="loading">{s.error ? '3D를 불러오지 못했어요. 새로고침해 주세요.' : ''}</div>}
     </div>

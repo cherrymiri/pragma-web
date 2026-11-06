@@ -46,7 +46,7 @@ export function glassMaterial({ veil = 0.03 } = {}) {
         // the wall's thickness catching light, plus a faint soft card behind the body
         float card = exp(-pow(vW.x / 0.05, 2.0)) * smoothstep(0.0, 0.1, vW.y) * smoothstep(0.26, 0.1, vW.y);
         float band = exp(-pow((vW.y + vW.x * 0.55 - uSheen) / 0.035, 2.0));
-        totalEmissiveRadiance += vec3(0.8, 0.86, 0.93) * (edge * 0.1 + card * uVeil + band * (0.07 + edge * 0.5));`);
+        totalEmissiveRadiance += vec3(0.8, 0.86, 0.93) * (edge * 0.1 + card * uVeil + band * (0.03 + edge * 0.22));`);
   };
   return m;
 }
@@ -106,7 +106,7 @@ export function waterBodyMaterial(waves) {
         float cx = sin(vW.x * 210.0 + vW.y * 60.0 + uTime * 0.7) * sin(vW.x * 120.0 - vW.y * 95.0 - uTime * 0.5);
         c *= 0.86 + 0.05 * cx + 0.16 * (1.0 - depth);
         float band = exp(-pow((vW.y + vW.x * 0.55 - uSheen) / 0.035, 2.0));
-        totalEmissiveRadiance += c * (0.27 + band * 0.1) + vec3(0.8, 0.92, 1.0) * pow(1.0 - ndv, 3.0) * 0.1;`);
+        totalEmissiveRadiance += c * (0.27 + band * 0.05) + vec3(0.8, 0.92, 1.0) * pow(1.0 - ndv, 3.0) * 0.1;`);
   };
   return m;
 }
@@ -269,8 +269,8 @@ export function createDrips() {
   const MAX = 14;
   const geo = new THREE.SphereGeometry(1, 16, 12);
   const mat = new THREE.MeshPhysicalMaterial({
-    color: 0x10242e, roughness: 0.04, ior: 1.33, envMapIntensity: 1.7, transparent: true, opacity: 0.9, depthWrite: false,
-    emissive: new THREE.Color(0.44, 0.66, 0.78), emissiveIntensity: 0.55,
+    color: 0x10242e, roughness: 0.04, ior: 1.33, envMapIntensity: 1.7, transparent: true, opacity: 0.94, depthWrite: false,
+    emissive: new THREE.Color(0.56, 0.78, 0.9), emissiveIntensity: 0.95,
   });
   const group = new THREE.Group();
   const up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
@@ -289,7 +289,7 @@ export function createDrips() {
     spawn(angle, big) {
       const d = drops.find((x) => !x.on);
       if (!d) return;
-      Object.assign(d, { on: true, stuck: true, age: 0, grow: 0.5 + Math.random() * 0.4, size: 0.0011 + big * 0.0006 + Math.random() * 0.0003, ang: angle });
+      Object.assign(d, { on: true, stuck: true, age: 0, grow: 0.5 + Math.random() * 0.4, size: 0.0021 + big * 0.0009 + Math.random() * 0.0004, ang: angle });
       d.vel.set(0, 0, 0); d.m.visible = true;
     },
     // seat(angle, out) gives the world point on the seal; g is the on-screen gravity

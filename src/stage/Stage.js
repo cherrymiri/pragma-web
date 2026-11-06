@@ -252,6 +252,7 @@ export class Stage {
     const away = store.get().step > 1;
     this.nozzleLift = damp(this.nozzleLift, away ? 1 : 0, 3.5, dt);
     this.nozzle.position.y = this.nozzleLift * 0.05;
+    this.nozzle.visible = this.nozzleLift < 0.97;
     this.nozzle.traverse((o) => { if (o.isMesh) o.material.opacity = 1 - this.nozzleLift * 0.999; });
   }
 

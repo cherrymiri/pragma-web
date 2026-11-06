@@ -1,0 +1,5 @@
+node_modules
+dist
+.vercel
+tests/shots
+tests/node_modules

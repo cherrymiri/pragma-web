@@ -260,6 +260,7 @@ export function createBubbles() {
       g.attributes.position.needsUpdate = true;
       g.attributes.aSize.needsUpdate = true;
     },
+    clear() { live.forEach((b, i) => { b.on = false; size[i] = 0; }); carry = 0; g.attributes.aSize.needsUpdate = true; },
   };
 }
 

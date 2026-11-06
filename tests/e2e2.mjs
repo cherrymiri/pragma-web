@@ -43,7 +43,7 @@ async function bringLid(p) {
   await until(p, () => window.__PRAGMA.get().lidAligned);
   await p.mouse.move(mx, my - 60);
 }
-const wheelTo = async (p, dir, n, dy = 100) => { for (let i = 0; i < n; i++) { await p.mouse.wheel(0, dir * dy); await wait(p, 15); } await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; }); };
+const wheelTo = async (p, dir, n, dy = 100) => { await p.mouse.move(480, 200); for (let i = 0; i < n; i++) { await p.mouse.wheel(0, dir * dy); await wait(p, 15); } await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; }); };
 async function tiltBy(p, px) {
   const [x, y] = await screen(p, [0, 0.1, 0]);
   await p.mouse.move(x, y); await p.mouse.down();
@@ -62,8 +62,8 @@ async function journeyMouse(browser) {
   await p.getByRole('button', { name: '뚜껑 닫기' }).click();
   ok((await st(p)).step === 2 && (await prompt(p)).includes('뚜껑을 가져와'), 'step 2 after 뚜껑 닫기');
   ok(!(await texts(p)).includes('사랑 따르기'), 'pour button gone');
-  await wait(p, 900);
-  ok(await p.evaluate(() => window.__PRAGMA_STAGE.nozzleLift > 0.9), 'nozzle retired');
+  await until(p, () => window.__PRAGMA_STAGE.nozzleLift > 0.9);
+  ok(true, 'nozzle retired');
   await bringLid(p);
   ok(!(await texts(p)).includes('기울여 보기'), 'no tilt button until turned');
   await wheelTo(p, 1, 4);

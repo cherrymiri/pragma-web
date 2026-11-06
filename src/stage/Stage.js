@@ -303,6 +303,7 @@ export class Stage {
   startTilt() {
     if (!this.canAdjust() || store.get().lidLock < 0.02) return;
     this.turnsTarget = this.turns;
+    this.bubbles.clear();
     this.wetTime = 0;
     this.tiltK = 7;
     this.pointer.id = null; this.pointer.intent = null;
@@ -319,6 +320,7 @@ export class Stage {
     this.wetTime = 0; this.seq = 0; this.dripsLeft = 0; this.leak = 0;
     this.pointer.id = null; this.pointer.intent = null;
     this.drips.clear();
+    this.bubbles.clear();
     sheen.uSheen.value = -1;
     this.lid.position.copy(this.home);
     this.lid.rotation.y = FREE_TURNS * Math.PI * 2;

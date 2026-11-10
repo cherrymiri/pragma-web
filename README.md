@@ -14,7 +14,7 @@ npm run build
 
 ## 판정 값
 
-- `SEAL_LOCK` (`src/stage/Stage.js`): 이 값 이상 잠겨야 새지 않습니다.
+- `SEAL_LOCK` (`src/stage/Stage.js`): 실제 텀블러처럼 끝까지 잠가야 새지 않습니다.
 - 판정은 물이 뚜껑의 밀폐부에 실제로 닿았을 때만 시작합니다(`Cavity.sealWet`). 물의 양은 결과에 영향을 주지 않습니다.
 - 물은 안쪽 벽 형상에서 읽은 공간 안의 부피로 계산합니다(`src/stage/liquid.js`).
 

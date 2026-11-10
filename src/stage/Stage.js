@@ -20,7 +20,7 @@ const LID_R = 0.0385;
 // Tilt and seal
 const MAX_TILT = 1.85;        // past horizontal, so even a little water can run down to the lid
 const MAX_TOWARD = 1.0;       // leaning toward or away from the viewer is limited, the object stays readable
-const SEAL_LOCK = 0.84;       // lid closed at least this far: the gasket seals (never shown)
+const SEAL_LOCK = 0.995;     // a real screw lid only seals once it is turned all the way to its stop
 const WET_TO_LEAK = 0.45;     // seconds the seal stays under water before a loose lid weeps
 const WET_TO_HOLD = 1.9;      // seconds under water that prove a closed lid holds
 const PIVOT_Y = 0.1;          // the middle of the tumbler

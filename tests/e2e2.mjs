@@ -101,6 +101,16 @@ async function journeyMouse(browser) {
   await p.mouse.up();
   await step(p, 5);
   ok(true, 'second attempt still loose leaks again');
+  // nearly closed is still not closed
+  await p.evaluate(() => { const s = window.__PRAGMA_STAGE; s.turnsTarget = 2.25 * 0.06; });
+  await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; });
+  ok(Math.abs((await st(p)).lidLock - 0.94) < 0.005, 'set to 94% closed');
+  await tiltBtn(p);
+  await tiltBy(p, 500);
+  await step(p, 4);
+  await p.mouse.up();
+  await step(p, 5);
+  ok(true, '94% closed still leaks');
   await wheelTo(p, 1, 20);
   ok(Math.abs((await st(p)).lidLock - 1) < 1e-6, 'hard stop fully closed');
   await tiltBtn(p);

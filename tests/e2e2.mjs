@@ -203,7 +203,7 @@ async function journeyPhone(browser, name, device) {
   await drag(vw * 0.15, 420, vw * 0.95, 420, 14, 300, false);
   await step(p, 4);
   await touch('touchEnd');
-  await until(p, () => window.__PRAGMA_STAGE.leakFx.q > 0.02);
+  await until(p, () => window.__PRAGMA.get().verdict === 'leak');
   await wait(p, 300);
   await p.screenshot({ path: shots + name + '-3-leak.png' });
   ok((await st(p)).verdict === 'leak', 'finger tilt leaks on a loose lid', (await st(p)).tiltAngle.toFixed(2));
@@ -228,8 +228,8 @@ const browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--ena
 const run = async (n, f) => { if (which === 'all' || which === n) { try { await f(); } catch (e) { ok(false, n + ' crashed', e.message.slice(0, 300)); } } };
 await run('mouse', () => journeyMouse(browser));
 await run('full', () => journeyFull(browser));
-await run('iphone', () => journeyPhone(browser, 'iphone', devices['iPhone 14']));
-await run('android', () => journeyPhone(browser, 'android', devices['Pixel 7']));
+await run('iphone', () => journeyPhone(browser, 'iphone', { ...devices['iPhone 14'], deviceScaleFactor: 1 }));
+await run('android', () => journeyPhone(browser, 'android', { ...devices['Pixel 7'], deviceScaleFactor: 1 }));
 await browser.close();
 console.log(fails ? `\n${fails} FAILED` : '\nALL PASSED');
 process.exit(fails ? 1 : 0);

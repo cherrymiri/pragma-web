@@ -1,6 +1,8 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { store } from './store.js';
 import { Stage } from './stage/Stage.js';
+import Opening from './opening/Opening.jsx';
+import { sound } from './sound.js';
 
 const useStore = () => useSyncExternalStore(store.subscribe, store.snapshot);
 const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
@@ -9,6 +11,18 @@ export default function App() {
   const host = useRef(null);
   const stage = useRef(null);
   const s = useStore();
+  const [intro, setIntro] = useState(true);
+  const [replay, setReplay] = useState(false);
+  const start = () => { sound.start(); setIntro(false); };
+  const again = () => {
+    setReplay(false); setIntro(true);
+    setTimeout(() => stage.current?.reset(), 950);          // reset behind the opening once it has covered the scene
+  };
+  useEffect(() => {
+    if (!s.ending) return;
+    const t = setTimeout(() => setReplay(true), 4600);       // both lines in, then a moment of stillness
+    return () => clearTimeout(t);
+  }, [s.ending]);
   useEffect(() => {
     const st = new Stage(host.current);
     window.__PRAGMA_STAGE = st;
@@ -42,7 +56,14 @@ export default function App() {
         <h1>PRAGMA</h1>
         <p className="subtitle">오래된 사랑</p>
       </header>
-      <div className="hud-bottom">
+      {s.ending && (
+        <div className="ending" lang="ko">
+          <span className="ending-rule" />
+          <p className="ending-line l1"><span className="ko">같아질 필요는 없어,</span><span className="en" lang="en">We don’t need to become the same,</span></p>
+          <p className="ending-line l2"><span className="ko">서로의 모양을 배우면 되니까.</span><span className="en" lang="en">we just need to learn each other’s shape.</span></p>
+        </div>
+      )}
+      <div className={'hud-bottom' + (s.ending ? ' is-ending' : '')}>
         <p className="prompt" aria-live="polite" key={prompt}>{prompt}</p>
         <p className="sub" key={sub || 'none'}>{sub}</p>
         <div className="actions">
@@ -62,10 +83,22 @@ export default function App() {
           )}
           {canClose && <button type="button" className="step-btn" onClick={() => stage.current?.closeLid()}>뚜껑 닫기</button>}
           {s.canTilt && <button type="button" className="step-btn" onClick={() => stage.current?.startTilt()}>기울여 보기</button>}
-          {s.ended && <button type="button" className="step-btn" onClick={() => stage.current?.reset()}>다시 체험하기</button>}
+          {replay && <button type="button" className="step-btn" onClick={again}>다시 체험하기</button>}
         </div>
       </div>
-      {!s.ready && <div className="loading">{s.error ? '3D를 불러오지 못했어요. 새로고침해 주세요.' : ''}</div>}
+      <Opening
+        visible={intro}
+        title="PRAGMA"
+        subtitle="오래된 사랑"
+        description={[
+          '프라그마(Pragma)는 현실적인 이해와 조율을 통해 오래도록 이어가는 사랑을 말합니다.',
+          '사랑은 처음부터 완벽하게 맞는 것이 아니라, 서로의 차이를 이해하고 함께할 방법을 찾아가는 과정입니다.',
+        ]}
+        how={['사랑을 원하는 만큼 채우고, 뚜껑을 맞춰 닫아보세요.', '텀블러를 기울였을 때 물이 새지 않도록 조절해 보세요.']}
+        ready={s.ready}
+        onStart={start}
+      />
+      {!s.ready && !intro && <div className="loading">{s.error ? '3D를 불러오지 못했어요. 새로고침해 주세요.' : ''}</div>}
     </div>
   );
 }

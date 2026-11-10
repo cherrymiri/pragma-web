@@ -25,5 +25,22 @@ h1 { margin: 0; font-size: clamp(17px, 2.1vh, 21px); font-weight: 500; letter-sp
 .pour.is-on { background: rgba(159, 211, 238, .16); border-color: #9fd3ee; transform: scale(.975); }
 .pour:disabled { opacity: .38; cursor: default; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--dim); font-size: 14px; }
+.ending { position: absolute; z-index: 5; pointer-events: none; display: grid; gap: clamp(18px, 3.2vh, 30px);
+  left: 54%; top: 50%; transform: translateY(-50%); width: min(40vw, 30rem); text-align: left; }
+.ending-rule { display: block; width: 28px; height: 1px; background: #a9c6da; opacity: .55; animation: fade 1.6s ease both; }
+.ending-line { margin: 0; display: grid; gap: 9px; opacity: 0; animation: settle 2s cubic-bezier(.2,.6,.2,1) both; }
+.ending-line.l1 { animation-delay: .3s; }
+.ending-line.l2 { animation-delay: 1.35s; }
+.ending .ko { font-size: clamp(21px, 2.3vw, 30px); font-weight: 300; line-height: 1.45; letter-spacing: .02em; color: #eef4f8; word-break: keep-all; }
+.ending .en { font-size: clamp(12.5px, 1.05vw, 15px); font-weight: 300; line-height: 1.5; letter-spacing: .03em; color: rgba(190, 210, 224, .62); }
+.hud-bottom.is-ending .prompt, .hud-bottom.is-ending .sub { display: none; }
+@media (max-aspect-ratio: 85/100) {
+  .ending { left: 0; right: 0; top: auto; bottom: calc(max(30px, env(safe-area-inset-bottom) + 16px) + 84px); transform: none;
+    width: auto; padding: 0 28px; text-align: center; justify-items: center; gap: 16px; }
+  .ending .ko { font-size: clamp(19px, 5.4vw, 23px); }
+  .ending .en { font-size: 12.5px; }
+}
+@keyframes settle { from { opacity: 0; transform: translateY(6px); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
+@keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .prompt, .sub { animation: none; } }

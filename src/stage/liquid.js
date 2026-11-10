@@ -61,6 +61,12 @@ export class Cavity {
     return -r * s + CAVITY_Y1 * c < d;
   }
 
+  // how far the lowest point of the mouth sits under the water (m, negative when dry)
+  sealDepth(d, c, s) {
+    const r = this.radiusAt(CAVITY_Y1 - 0.0005);
+    return d - (-r * s + CAVITY_Y1 * c);
+  }
+
   // A solid of revolution matching the cavity: the visible body of water, cut by the surface in the shader
   geometry() {
     const pts = [new THREE.Vector2(0, CAVITY_Y0)];

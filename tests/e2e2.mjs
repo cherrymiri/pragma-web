@@ -25,6 +25,7 @@ async function open(browser, opts) {
   const p = await ctx.newPage();
   p.errs = []; p.on('pageerror', (e) => p.errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && p.errs.push(m.text()));
   await p.goto(url); await until(p, () => window.__PRAGMA?.get().ready);
+  await p.click('.opening-start'); await wait(p, 1200);
   await p.evaluate((s) => { window.__PRAGMA_STAGE.speed = s; }, SPEED);
   await wait(p, 600);
   return { ctx, p };
@@ -79,7 +80,7 @@ async function journeyMouse(browser) {
   await p.mouse.move(900, 300, { steps: 8 });
   await step(p, 4);
   await p.mouse.up();
-  await until(p, () => document.querySelector('canvas') && window.__PRAGMA_STAGE.drips.active());
+  await until(p, () => window.__PRAGMA_STAGE.leakFx.q > 0.02);
   await wait(p, 350);
   await p.screenshot({ path: shots + 'a3-leak.png' });
   s = await st(p);
@@ -119,7 +120,7 @@ async function journeyMouse(browser) {
   s = await st(p);
   ok(s.verdict === 'sealed', 'closed lid holds with little water', s.tiltAngle.toFixed(2));
   await p.screenshot({ path: shots + 'a5-hold.png' });
-  ok(await p.evaluate(() => !window.__PRAGMA_STAGE.drips.active()), 'no drops on success');
+  ok(await p.evaluate(() => !window.__PRAGMA_STAGE.leakFx.busy()), 'no leak on success');
   await p.mouse.up();
   await until(p, () => window.__PRAGMA_STAGE.sheenStart > 0);
   await until(p, () => window.__PRAGMA_STAGE.seq >= window.__PRAGMA_STAGE.sheenStart + 1.3);
@@ -128,9 +129,13 @@ async function journeyMouse(browser) {
   await wait(p, 400);
   await p.screenshot({ path: shots + 'a7-end.png' });
   await noNumbers(p, 'end');
-  ok((await prompt(p)) === '', 'no ending text invented');
-  await p.getByRole('button', { name: '다시 체험하기' }).click();
-  await wait(p, 500);
+  await until(p, () => window.__PRAGMA.get().ending);
+  const end = await p.evaluate(() => [...document.querySelectorAll('.ending .ko, .ending .en')].map((e) => e.textContent));
+  ok(JSON.stringify(end) === JSON.stringify(['같아질 필요는 없어,', 'We don’t need to become the same,', '서로의 모양을 배우면 되니까.', 'we just need to learn each other’s shape.']), 'ending lines exact');
+  await p.getByRole('button', { name: '다시 체험하기' }).click({ timeout: 30000 });
+  await wait(p, 1600);
+  ok(await p.isVisible('.opening.is-in'), 'replay returns to the opening');
+  await p.click('.opening-start'); await wait(p, 1200);
   s = await st(p);
   ok(s.step === 1 && s.waterLevel === 0 && s.lidMode === 'home' && !s.lidAligned && s.lidLock === 0 && !s.hasPoured && !s.ended && s.tiltAngle < 1e-3, 'replay resets everything');
   await pourMouse(p, 0.03);
@@ -198,7 +203,7 @@ async function journeyPhone(browser, name, device) {
   await drag(vw * 0.15, 420, vw * 0.95, 420, 14, 300, false);
   await step(p, 4);
   await touch('touchEnd');
-  await until(p, () => window.__PRAGMA_STAGE.drips.active());
+  await until(p, () => window.__PRAGMA_STAGE.leakFx.q > 0.02);
   await wait(p, 300);
   await p.screenshot({ path: shots + name + '-3-leak.png' });
   ok((await st(p)).verdict === 'leak', 'finger tilt leaks on a loose lid', (await st(p)).tiltAngle.toFixed(2));

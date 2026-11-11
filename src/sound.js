@@ -74,5 +74,13 @@ export const sound = {
       o.connect(og).connect(master); o.start(t); o.stop(t + 0.07);
     });
   },
+  // a soft glass tick: the check angle has been reached
+  tick() {
+    if (!ctx) return;
+    const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
+    o.frequency.value = 1760;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    o.connect(g).connect(master); o.start(t); o.stop(t + 0.4);
+  },
   quiet() { if (!ctx) return; ['pour', 'pourLow', 'twist', 'leak'].forEach((k) => to(ch[k].g.gain, 0, 0.1)); },
 };

@@ -23,8 +23,6 @@ const LID_R = 0.0385;
 const MAX_TILT = 1.85;        // past horizontal, so even a little water can run down to the lid
 const MAX_TOWARD = 1.0;       // leaning toward or away from the viewer is limited, the object stays readable
 const SEAL_LOCK = 0.995;     // a real screw lid only seals once it is turned all the way to its stop
-const WET_TO_LEAK = 0.45;     // seconds the seal stays under water before a loose lid weeps
-const WET_TO_HOLD = 1.9;      // seconds under water that prove a closed lid holds
 const PIVOT_Y = 0.1;          // the middle of the tumbler
 const up = new THREE.Vector3(0, 1, 0);
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -135,6 +133,13 @@ export class Stage {
 
     this.leakFx = createLeak(this.root, GRAVITY, sound); this.scene.add(this.leakFx.group);
     this.glow = createSeamGlow(this.root);
+    // check guide: a faint arc from upright to the check angle, and a dot that follows the top of the tumbler
+    this.guide = new THREE.Group(); this.guide.visible = false; this.scene.add(this.guide);
+    this.guideMat = new THREE.LineDashedMaterial({ color: 0xa9c6da, transparent: true, opacity: 0, dashSize: 0.004, gapSize: 0.004, depthWrite: false });
+    this.tickMat = new THREE.LineBasicMaterial({ color: 0xbcd6e8, transparent: true, opacity: 0, depthWrite: false });
+    this.guideDot = new THREE.Mesh(new THREE.CircleGeometry(0.0028, 20), new THREE.MeshBasicMaterial({ color: 0xd8e8f2, transparent: true, opacity: 0, depthWrite: false }));
+    this.guide.add(this.guideDot);
+    this.guideAngle = -1;
     this.emph = 0; this.endK = 0; this.lockWas = 0;
     this.bodyHit = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.056, 0.235, 12), new THREE.MeshBasicMaterial({ visible: false }));
     this.pivot.add(this.bodyHit);
@@ -314,7 +319,19 @@ export class Stage {
     this.wetTime = 0;
     this.tiltK = 7;
     this.pointer.id = null; this.pointer.intent = null;
-    store.set({ step: 3, verdict: 'none' });
+    this.checkAngle = this.findCheckAngle();
+    this.checkT = -1; this.hintT = 0; this.dragged = false;
+    store.set({ step: 3, verdict: 'none', checking: false });
+  }
+
+  // the lean at which this much water certainly reaches the seal (never less than about 69°)
+  findCheckAngle() {
+    for (let a = 0.9; a <= MAX_TILT; a += 0.02) {
+      const c = Math.cos(a), s = Math.sin(a);
+      const d = this.cavity.solve(this.volume, c, s);
+      if (this.cavity.sealDepth(d, c, s) > 0.004) return clamp(a + 0.08, 1.2, MAX_TILT);
+    }
+    return MAX_TILT;
   }
 
   reset() {
@@ -329,12 +346,16 @@ export class Stage {
     this.leakFx.clear();
     this.bubbles.clear();
     this.glow.set(-1, 0);
+    this.checkT = -1; this.leakCount = 0; this.tiltK = 7; this.zoom = 1;
+    this.guide.visible = false;
+    this.pivot.quaternion.identity(); this.pivot.position.y = PIVOT_Y;
+    this.nozzleLift = 0; this.agitation = 0; this.flow = 0;
     this.emph = 0; this.endK = 0; this.lockWas = 0; this.sheenStart = 0; this.uprightAt = 0; this.glowStart = 0;
     sheen.uSheen.value = -1;
     sound.quiet();
     this.lid.position.copy(this.home);
     this.lid.rotation.y = FREE_TURNS * Math.PI * 2;
-    store.set({ step: 1, hasPoured: false, lidMode: 'home', lidAligned: false, lidLock: 0, verdict: 'none', ended: false, ending: false, canTilt: false, leakage: 0 });
+    store.set({ step: 1, hasPoured: false, lidMode: 'home', lidAligned: false, lidLock: 0, verdict: 'none', ended: false, ending: false, canTilt: false, leakage: 0, checking: false, isPouring: false });
     this.applyLevel();
   }
 
@@ -375,13 +396,16 @@ export class Stage {
     if (e.pointerId !== p.id) return;
     e.preventDefault();
     if (p.intent === 'tilt') {
-      // the same pull gives the same lean on any screen
+      if (this.checkT >= 0) return;
+      this.dragged = true;
+      // the same pull gives the same lean on any screen; it cannot go past the check angle
       const b = this.renderer.domElement.getBoundingClientRect();
-      const per = MAX_TILT / (0.46 * Math.min(b.width, b.height));
+      const lim = this.checkAngle || MAX_TILT;
+      const per = lim / (0.4 * Math.min(b.width, b.height));
       let x = p.sx + (e.clientX - p.downX) * per;
       let y = clamp(p.sy + (e.clientY - p.downY) * per, -MAX_TOWARD, MAX_TOWARD);
       const len = Math.hypot(x, y);
-      if (len > MAX_TILT) { x *= MAX_TILT / len; y *= MAX_TILT / len; }
+      if (len > lim) { x *= lim / len; y *= lim / len; }
       this.tiltTarget.set(x, y);
     } else if (p.intent === 'drag') {
       const w = this.pointerToWorld(e);
@@ -529,7 +553,7 @@ export class Stage {
   updateTilt(dt) {
     const s = store.get();
     const prevX = this.tilt.x, prevY = this.tilt.y;
-    const free = s.step === 3 && this.pointer.intent !== 'tilt';
+    const free = s.step === 3 && this.pointer.intent !== 'tilt' && this.checkT < 0 && (this.dragged || this.hintT > 1.8);
     if (free) this.tiltTarget.multiplyScalar(Math.exp(-1.6 * dt));    // let go and it eases back upright
     this.tilt.x = damp(this.tilt.x, this.tiltTarget.x, this.tiltK, dt);
     this.tilt.y = damp(this.tilt.y, this.tiltTarget.y, this.tiltK, dt);
@@ -557,30 +581,40 @@ export class Stage {
     store.set({ tiltAngle: angle, sealWet: wet });
 
     if (s.step === 3) {
-      this.wetTime = wet ? this.wetTime + dt : Math.max(0, this.wetTime - dt * 2);
-      if (s.lidLock < SEAL_LOCK) {
-        if (this.wetTime > WET_TO_LEAK) this.beginLeak(s.lidLock);
-      } else if (this.wetTime > WET_TO_HOLD) {
-        this.tiltTarget.copy(this.tilt);
+      // a small sway hints that the tumbler can be tipped, until the visitor takes it
+      if (!this.dragged && this.hintT < 1.8) { this.hintT += dt; this.tiltTarget.set(0.11 * Math.sin(Math.PI * this.hintT / 0.9) * (1 - this.hintT / 1.8), 0); }
+      if (this.checkT < 0 && angle >= this.checkAngle - 0.035) {
+        // reached: hold it there, no more input needed
+        this.checkT = 0;
+        this.tiltTarget.copy(this.tilt).setLength(this.checkAngle);
         this.pointer.intent = null; this.pointer.id = null;
-        this.seq = 0;
-        store.set({ step: 6, verdict: 'sealed' });
+        this.renderer.domElement.style.cursor = '';
+        sound.tick();
+        store.set({ checking: true });
+      }
+      if (this.checkT >= 0) {
+        this.checkT += dt;
+        if (this.checkT >= 0.8) {
+          if (s.lidLock >= SEAL_LOCK) { this.seq = 0; store.set({ step: 6, verdict: 'sealed', checking: false }); }
+          else this.beginLeak(s.lidLock);
+          this.checkT = -2;
+        }
       }
     } else if (s.step === 4) {
       this.seq += dt;
       // a looser lid empties faster; a nearly closed one weeps for longer before it is set down
       const hold = this.leakHold;
-      if (this.seq > hold) { this.tiltTarget.set(0, 0); this.tiltK = 1.9; }
+      if (this.seq > hold) { this.tiltTarget.set(0, 0); this.tiltK = this.leakCount > 1 ? 2.8 : 1.9; }
       if (this.seq > hold && angle < 0.015 && !this.leakFx.busy()) { this.tilt.set(0, 0); store.set({ step: 5 }); this.tiltK = 7; }
     } else if (s.step === 6) {
       this.seq += dt;
       const q = this.seq;
       // 01 hold it there; 02 a line of light runs once round the joint; 03 set it down and rest
-      if (q > 0.8 && q < 0.8 + dt * 1.5) sound.click(true);
+      if (q > 0.5 && q < 0.5 + dt * 1.5) sound.click(true);
       if (!this.glowStart) { const c = this.root.worldToLocal(this.camera.position.clone()); this.glowStart = Math.atan2(c.z, c.x) - 1.1; }
-      this.glow.set(q > 0.8 ? Math.min(1.0001, (q - 0.8) / 1.9) : -1, this.glowStart);       // begins on the side facing the visitor
-      if (q > 2.9 && !s.ending) { this.tiltTarget.set(0, 0); this.tiltK = 1.25; }
-      if (q > 2.9 && angle < 0.01 && !this.uprightAt) this.uprightAt = q;
+      this.glow.set(q > 0.5 ? Math.min(1.0001, (q - 0.5) / 1.9) : -1, this.glowStart);       // begins on the side facing the visitor
+      if (q > 2.6 && !s.ending) { this.tiltTarget.set(0, 0); this.tiltK = 1.25; }
+      if (q > 2.6 && angle < 0.01 && !this.uprightAt) this.uprightAt = q;
       if (this.uprightAt && q > this.uprightAt + 0.3 && !this.sheenStart) this.sheenStart = q;
       if (this.sheenStart) {
         const k = (q - this.sheenStart) / 3.2;
@@ -601,16 +635,47 @@ export class Stage {
     if (lost > 0) { this.volume = Math.max(this.leakStartVol * 0.88, this.volume - lost); this.applyLevel(); }
   }
 
+  buildGuide(a) {
+    for (const c of [...this.guide.children]) if (c !== this.guideDot) { this.guide.remove(c); c.geometry.dispose(); }
+    const R = 0.155, pts = [];
+    for (let i = 0; i <= 96; i++) { const t = -a + (2 * a * i) / 96; pts.push(new THREE.Vector3(R * Math.sin(t), R * Math.cos(t), 0)); }
+    const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), this.guideMat);
+    arc.computeLineDistances(); this.guide.add(arc);
+    for (const sgn of [-1, 1]) {
+      const t = sgn * a;
+      const tick = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3((R - 0.007) * Math.sin(t), (R - 0.007) * Math.cos(t), 0), new THREE.Vector3((R + 0.007) * Math.sin(t), (R + 0.007) * Math.cos(t), 0)]), this.tickMat);
+      this.guide.add(tick);
+    }
+    this.guideAngle = a;
+  }
+
+  updateGuide(dt, step) {
+    const show = step === 3;
+    if (show && this.guideAngle !== this.checkAngle) this.buildGuide(this.checkAngle);
+    const reached = this.checkT >= 0;
+    const target = show ? (reached ? 0.75 : 0.3) : 0;
+    this.guideMat.opacity = damp(this.guideMat.opacity, target, show ? 3 : 2.5, dt);
+    this.tickMat.opacity = damp(this.tickMat.opacity, show ? (reached ? 0.95 : 0.5) : 0, 3, dt);
+    this.guideDot.material.opacity = damp(this.guideDot.material.opacity, show ? 0.85 : 0, 3, dt);
+    this.guide.visible = this.guideMat.opacity > 0.01;
+    this.guide.position.set(0, this.pivot.position.y, 0.0);
+    const top = new THREE.Vector3(0, 1, 0).applyQuaternion(this.pivot.quaternion);
+    const th = Math.atan2(top.x, top.y);
+    this.guideDot.position.set(0.155 * Math.sin(th), 0.155 * Math.cos(th), 0.0005);
+  }
+
   beginLeak(lock) {
     this.leak = clamp(1 - lock / SEAL_LOCK, 0, 1);
     this.leakStartVol = this.volume;
-    this.leakHold = 3.0 + 1.0 * (1 - this.leak);   // a looser lid empties faster; a nearly closed one weeps for longer
+    this.leakCount = (this.leakCount || 0) + 1;
+    // the first time it is shown in full; later attempts are quicker so retrying never drags
+    this.leakHold = this.leakCount > 1 ? 1.9 : 2.6 + 0.8 * (1 - this.leak);
     this.leakFx.resetTrail();
     this.seq = 0;
     this.tiltTarget.copy(this.tilt);
     this.pointer.intent = null; this.pointer.id = null;
     this.renderer.domElement.style.cursor = '';
-    store.set({ step: 4, verdict: 'leak', leakage: this.leak });
+    store.set({ step: 4, verdict: 'leak', leakage: this.leak, checking: false });
   }
 
   frame() {
@@ -618,6 +683,7 @@ export class Stage {
     const t = this.clock.elapsedTime;
     this.updateLid(dt);
     this.updateTilt(dt);
+    this.updateGuide(dt, store.get().step);
     this.scene.updateMatrixWorld();
     this.updateSurface();
     this.updateWater(dt, t);
@@ -625,7 +691,7 @@ export class Stage {
     const st = store.get();
     const wide = this.narrow && (step === 3 || step === 4 || (step === 6 && !st.ending));
     // success: lean in toward the joint, then step back; ending: make room for the words
-    this.emph = damp(this.emph, step === 6 && this.seq < 2.9 ? 1 : 0, step === 6 && this.seq < 2.9 ? 1.4 : 1.1, dt);
+    this.emph = damp(this.emph, step === 6 && this.seq < 2.6 ? 1 : 0, step === 6 && this.seq < 2.6 ? 1.6 : 1.1, dt);
     this.endK = damp(this.endK, st.ending ? 1 : 0, 1.1, dt);
     this.zoom = damp(this.zoom, wide ? 1.22 : 1, 2.4, dt);
     this.placeCamera();

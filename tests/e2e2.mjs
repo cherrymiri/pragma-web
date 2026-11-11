@@ -50,7 +50,7 @@ async function tiltBy(p, px) {
   await p.mouse.move(x, y); await p.mouse.down();
   await p.mouse.move(x + px, y, { steps: 10 });
 }
-const tiltBtn = (p) => p.getByRole('button', { name: '기울여 보기' }).click();
+const tiltBtn = (p) => p.getByRole('button', { name: '기울여 확인하기' }).click();
 
 async function journeyMouse(browser) {
   console.log('\n== 1,3,4,6: little water, loose lid, leak, re-adjust, success, replay (mouse)');
@@ -66,20 +66,24 @@ async function journeyMouse(browser) {
   await until(p, () => window.__PRAGMA_STAGE.nozzleLift > 0.9);
   ok(true, 'nozzle retired');
   await bringLid(p);
-  ok(!(await texts(p)).includes('기울여 보기'), 'no tilt button until turned');
+  ok(!(await texts(p)).includes('기울여 확인하기'), 'no tilt button until turned');
   await wheelTo(p, 1, 4);
-  ok((await texts(p)).includes('기울여 보기'), 'tilt button after a small turn', (await st(p)).lidLock.toFixed(3));
+  ok((await texts(p)).includes('기울여 확인하기'), 'tilt button after a small turn', (await st(p)).lidLock.toFixed(3));
   const lockA = (await st(p)).lidLock, volA = await p.evaluate(() => window.__PRAGMA_STAGE.volume);
   await tiltBtn(p);
   ok((await prompt(p)).includes('텀블러를 기울여보세요'), 'prompt: tilt');
   await tiltBy(p, 130);                     // a modest lean
   await wait(p, 2200);
   let s = await st(p);
-  ok(s.step === 3 && !s.sealWet, 'little water does not reach the lid at a modest lean', s.tiltAngle.toFixed(2));
+  ok(s.step === 3 && !s.checking, 'a modest lean does not start the check', s.tiltAngle.toFixed(2));
+  ok(await p.evaluate(() => window.__PRAGMA_STAGE.guide.visible), 'check guide is shown');
   await p.screenshot({ path: shots + 'a2-modest.png' });
   await p.mouse.move(900, 300, { steps: 8 });
+  await until(p, () => window.__PRAGMA.get().checking);
+  ok(true, 'reaching the check angle starts the check by itself');
+  await p.mouse.up();                                     // no more input from here
   await step(p, 4);
-  await p.mouse.up();
+  ok((await prompt(p)).includes('아직 틈이 남아 있어요'), 'prompt: a gap remains');
   await until(p, () => window.__PRAGMA_STAGE.leakFx.q > 0.02);
   await wait(p, 350);
   await p.screenshot({ path: shots + 'a3-leak.png' });
@@ -98,8 +102,10 @@ async function journeyMouse(browser) {
   ok((await st(p)).lidLock > lockA, 'can keep turning from where it was');
   await tiltBtn(p);
   await tiltBy(p, 500);
-  await step(p, 4);                        // still short of sealed: leaks again
   await p.mouse.up();
+  await step(p, 4);                        // still short of sealed: leaks again, and less than before
+  const leak2 = (await st(p)).leakage;
+  ok(leak2 < s.leakage, 'tighter lid leaks less', leak2.toFixed(2) + ' < ' + s.leakage.toFixed(2));
   await step(p, 5);
   ok(true, 'second attempt still loose leaks again');
   // nearly closed is still not closed
@@ -108,17 +114,18 @@ async function journeyMouse(browser) {
   ok(Math.abs((await st(p)).lidLock - 0.94) < 0.005, 'set to 94% closed');
   await tiltBtn(p);
   await tiltBy(p, 500);
-  await step(p, 4);
   await p.mouse.up();
+  await step(p, 4);
   await step(p, 5);
   ok(true, '94% closed still leaks');
   await wheelTo(p, 1, 20);
   ok(Math.abs((await st(p)).lidLock - 1) < 1e-6, 'hard stop fully closed');
   await tiltBtn(p);
   await tiltBy(p, 500);
+  await p.mouse.up();
   await step(p, 6);
   s = await st(p);
-  ok(s.verdict === 'sealed', 'closed lid holds with little water', s.tiltAngle.toFixed(2));
+  ok(s.verdict === 'sealed', 'closed lid holds with little water, without holding the mouse', s.tiltAngle.toFixed(2));
   await p.screenshot({ path: shots + 'a5-hold.png' });
   ok(await p.evaluate(() => !window.__PRAGMA_STAGE.leakFx.busy()), 'no leak on success');
   await p.mouse.up();
@@ -133,13 +140,19 @@ async function journeyMouse(browser) {
   const end = await p.evaluate(() => [...document.querySelectorAll('.ending .ko, .ending .en')].map((e) => e.textContent));
   ok(JSON.stringify(end) === JSON.stringify(['같아질 필요는 없어,', 'We don’t need to become the same,', '서로의 모양을 배우면 되니까.', 'we just need to learn each other’s shape.']), 'ending lines exact');
   await p.getByRole('button', { name: '다시 체험하기' }).click({ timeout: 30000 });
-  await wait(p, 1600);
-  ok(await p.isVisible('.opening.is-in'), 'replay returns to the opening');
-  await p.click('.opening-start'); await wait(p, 1200);
+  await wait(p, 900);
+  ok(!(await p.isVisible('.opening.is-in')), 'replay goes straight to the first pour');
   s = await st(p);
   ok(s.step === 1 && s.waterLevel === 0 && s.lidMode === 'home' && !s.lidAligned && s.lidLock === 0 && !s.hasPoured && !s.ended && s.tiltAngle < 1e-3, 'replay resets everything');
   await pourMouse(p, 0.03);
   ok((await texts(p)).includes('뚜껑 닫기'), 'second run works');
+  await p.getByRole('button', { name: '뚜껑 닫기' }).click();
+  await bringLid(p);
+  await wheelTo(p, 1, 3);
+  await p.getByRole('button', { name: '처음부터 다시 하기' }).click();
+  await wait(p, 900);
+  s = await st(p);
+  ok(s.step === 1 && s.waterLevel === 0 && !s.lidAligned && s.lidLock === 0, 'restart button resets mid-way');
   ok(p.errs.length === 0, 'no console errors', p.errs.slice(0, 2).join(' | '));
   await ctx.close();
 }
@@ -165,13 +178,10 @@ async function journeyFull(browser) {
   const y = (await st(p)).lidPosition.split(',')[1];
   ok(Math.abs(+y - 0.183) < 2e-5, 'lid seats at the model position');
   await tiltBtn(p);
-  await tiltBy(p, -170);                    // leaning left this time
-  await until(p, () => window.__PRAGMA.get().sealWet);
-  s = await st(p);
-  ok(s.tiltAngle < 1.2, 'full water reaches the lid sooner than a little water', s.tiltAngle.toFixed(2));
-  await p.screenshot({ path: shots + 'b1-full-tilt.png' });
-  await step(p, 6);
+  await tiltBy(p, -400);                    // leaning left this time
   await p.mouse.up();
+  await step(p, 6);
+  await p.screenshot({ path: shots + 'b1-full-tilt.png' });
   ok((await st(p)).verdict === 'sealed', 'sealed at first try');
   await until(p, () => window.__PRAGMA.get().ended);
   ok(p.errs.length === 0, 'no console errors', p.errs.slice(0, 2).join(' | '));
@@ -199,10 +209,9 @@ async function journeyPhone(browser, name, device) {
   await drag(vw * 0.75, 420, vw * 0.45, 420);
   await until(p, () => window.__PRAGMA.get().canTilt);
   await p.screenshot({ path: shots + name + '-2.png' });
-  await tap('기울여 보기'); await wait(p, 300);
-  await drag(vw * 0.15, 420, vw * 0.95, 420, 14, 300, false);
+  await tap('기울여 확인하기'); await wait(p, 300);
+  await drag(vw * 0.15, 420, vw * 0.95, 420, 14, 300, true);
   await step(p, 4);
-  await touch('touchEnd');
   await until(p, () => window.__PRAGMA.get().verdict === 'leak');
   await wait(p, 300);
   await p.screenshot({ path: shots + name + '-3-leak.png' });
@@ -211,11 +220,10 @@ async function journeyPhone(browser, name, device) {
   for (let i = 0; i < 18 && (await st(p)).lidLock < 0.999; i++) await drag(vw * 0.9, 420, vw * 0.1, 420, 6, 20);
   await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; });
   ok((await st(p)).lidLock > 0.999, 'swipes close it fully');
-  await tap('기울여 보기'); await wait(p, 300);
-  await drag(vw * 0.1, 420, vw * 0.95, 420, 14, 300, false);
+  await tap('기울여 확인하기'); await wait(p, 300);
+  await drag(vw * 0.1, 420, vw * 0.95, 420, 14, 300, true);
   await step(p, 6);
   await p.screenshot({ path: shots + name + '-4-hold.png' });
-  await touch('touchEnd');
   ok((await st(p)).verdict === 'sealed', 'sealed by touch');
   await until(p, () => window.__PRAGMA.get().ended);
   await p.screenshot({ path: shots + name + '-5-end.png' });

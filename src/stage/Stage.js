@@ -637,10 +637,14 @@ export class Stage {
 
   buildGuide(a) {
     for (const c of [...this.guide.children]) if (c !== this.guideDot) { this.guide.remove(c); c.geometry.dispose(); }
-    const R = 0.155, pts = [];
-    for (let i = 0; i <= 96; i++) { const t = -a + (2 * a * i) / 96; pts.push(new THREE.Vector3(R * Math.sin(t), R * Math.cos(t), 0)); }
-    const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), this.guideMat);
-    arc.computeLineDistances(); this.guide.add(arc);
+    // two arcs, one each side, open at the top so they never cross the title
+    const R = 0.155, gap = 0.5;
+    for (const sgn of [-1, 1]) {
+      const pts = [];
+      for (let i = 0; i <= 48; i++) { const t = sgn * (gap + ((a - gap) * i) / 48); pts.push(new THREE.Vector3(R * Math.sin(t), R * Math.cos(t), 0)); }
+      const arc = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), this.guideMat);
+      arc.computeLineDistances(); this.guide.add(arc);
+    }
     for (const sgn of [-1, 1]) {
       const t = sgn * a;
       const tick = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3((R - 0.007) * Math.sin(t), (R - 0.007) * Math.cos(t), 0), new THREE.Vector3((R + 0.007) * Math.sin(t), (R + 0.007) * Math.cos(t), 0)]), this.tickMat);

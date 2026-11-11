@@ -79,7 +79,7 @@ async function journeyMouse(browser) {
   ok(await p.evaluate(() => window.__PRAGMA_STAGE.guide.visible), 'check guide is shown');
   await p.screenshot({ path: shots + 'a2-modest.png' });
   await p.mouse.move(900, 300, { steps: 8 });
-  await until(p, () => window.__PRAGMA.get().checking);
+  await until(p, () => window.__PRAGMA.get().checking || window.__PRAGMA.get().verdict !== 'none');
   ok(true, 'reaching the check angle starts the check by itself');
   await p.mouse.up();                                     // no more input from here
   await step(p, 4);

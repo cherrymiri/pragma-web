@@ -20,7 +20,8 @@ const state = {
   successLine: 0,        // 0 none, 1 first line of the success meaning, 2 both
   successOut: false,     // the success meaning has stepped aside for the ending
   leakCount: 0,
-  leakLess: false,       // this leak was smaller than the one before          // the closing moment has finished
+  leakLess: false,
+  tiltTouched: false,    // the visitor has taken hold of the tumbler in the tilt step       // this leak was smaller than the one before          // the closing moment has finished
   ready: false,
   error: false,
 };

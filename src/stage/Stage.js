@@ -321,7 +321,7 @@ export class Stage {
     this.pointer.id = null; this.pointer.intent = null;
     this.checkAngle = this.findCheckAngle();
     this.checkT = -1; this.hintT = 0; this.dragged = false;
-    store.set({ step: 3, verdict: 'none', checking: false });
+    store.set({ step: 3, verdict: 'none', checking: false, tiltTouched: false });
   }
 
   // the lean at which this much water certainly reaches the seal (never less than about 69°)
@@ -355,7 +355,7 @@ export class Stage {
     sound.quiet();
     this.lid.position.copy(this.home);
     this.lid.rotation.y = FREE_TURNS * Math.PI * 2;
-    store.set({ step: 1, hasPoured: false, lidMode: 'home', lidAligned: false, lidLock: 0, verdict: 'none', ended: false, ending: false, canTilt: false, leakage: 0, checking: false, isPouring: false, successLine: 0, successOut: false, leakCount: 0, leakLess: false });
+    store.set({ step: 1, hasPoured: false, lidMode: 'home', lidAligned: false, lidLock: 0, verdict: 'none', ended: false, ending: false, canTilt: false, leakage: 0, checking: false, isPouring: false, successLine: 0, successOut: false, leakCount: 0, leakLess: false, tiltTouched: false });
     this.applyLevel();
   }
 
@@ -367,6 +367,7 @@ export class Stage {
     if (s.step === 3) {
       if (e.pointerType === 'mouse' && !this.hitsBody(e)) return;
       Object.assign(p, { id: e.pointerId, x: e.clientX, y: e.clientY, sx: this.tiltTarget.x, sy: this.tiltTarget.y, downX: e.clientX, downY: e.clientY, intent: 'tilt' });
+      store.set({ tiltTouched: true });
       this.renderer.domElement.style.cursor = 'grabbing';
     } else if (this.canAdjust()) {
       // on touch the whole stage turns the lid, so a finger never has to hide it
@@ -447,14 +448,16 @@ export class Stage {
     }
   }
 
-  addTurns(d) { this.turnsTarget = clamp(this.turnsTarget + d, 0, FREE_TURNS); }
+  // the lid can only run a little ahead of where it visibly is, so a trackpad fling or a fast wheel spin
+  // cannot close it in one go: it takes several deliberate turns, like a real screw lid
+  addTurns(d) { this.turnsTarget = clamp(this.turnsTarget + d, Math.max(0, this.turns - 0.28), Math.min(FREE_TURNS, this.turns + 0.28)); }
 
   wheel(e) {
     e.preventDefault();
     if (!this.canAdjust()) return;
     let dy = e.deltaY;
     if (e.deltaMode === 1) dy *= 32; else if (e.deltaMode === 2) dy *= 400;
-    this.addTurns(-clamp(dy, -160, 160) * 0.0011);   // wheel down closes, up opens
+    this.addTurns(-clamp(dy, -120, 120) * 0.0008);   // about 0.08 turn per mouse notch; trackpad pixels count the same
   }
 
   updateLid(dt) {
@@ -491,7 +494,8 @@ export class Stage {
         store.set({ lidMode: 'aligned', lidAligned: true });
       }
     } else if (s.lidMode === 'aligned') {
-      this.turns = damp(this.turns, this.turnsTarget, 11, dt);
+      const want = damp(this.turns, this.turnsTarget, 9, dt);
+      this.turns += clamp(want - this.turns, -1.0 * dt, 1.0 * dt);   // never faster than one turn a second
       if (Math.abs(this.turns - this.turnsTarget) < 1e-4) this.turns = this.turnsTarget;
       sound.twist(Math.abs(this.turns - (this.turnsPrev ?? this.turns)) / Math.max(dt, 1e-3));
       this.turnsPrev = this.turns;
@@ -553,7 +557,7 @@ export class Stage {
   updateTilt(dt) {
     const s = store.get();
     const prevX = this.tilt.x, prevY = this.tilt.y;
-    const free = s.step === 3 && this.pointer.intent !== 'tilt' && this.checkT < 0 && (this.dragged || this.hintT > 1.8);
+    const free = s.step === 3 && this.pointer.intent !== 'tilt' && this.checkT < 0;
     if (free) this.tiltTarget.multiplyScalar(Math.exp(-1.6 * dt));    // let go and it eases back upright
     this.tilt.x = damp(this.tilt.x, this.tiltTarget.x, this.tiltK, dt);
     this.tilt.y = damp(this.tilt.y, this.tiltTarget.y, this.tiltK, dt);
@@ -582,7 +586,6 @@ export class Stage {
 
     if (s.step === 3) {
       // a small sway hints that the tumbler can be tipped, until the visitor takes it
-      if (!this.dragged && this.hintT < 1.8) { this.hintT += dt; this.tiltTarget.set(0.11 * Math.sin(Math.PI * this.hintT / 0.9) * (1 - this.hintT / 1.8), 0); }
       if (this.checkT < 0 && angle >= this.checkAngle - 0.035) {
         // reached: hold it there, no more input needed
         this.checkT = 0;
@@ -610,14 +613,14 @@ export class Stage {
       this.seq += dt;
       const q = this.seq;
       // 01 hold it there; 02 a line of light runs once round the joint; 03 set it down and rest
-      if (q > 0.5 && q < 0.5 + dt * 1.5) sound.click(true);
+      if (q > 0.2 && q < 0.2 + dt * 1.5) sound.click(true);
       if (!this.glowStart) { const c = this.root.worldToLocal(this.camera.position.clone()); this.glowStart = Math.atan2(c.z, c.x) - 1.1; }
-      this.glow.set(q > 0.5 ? Math.min(1.0001, (q - 0.5) / 1.9) : -1, this.glowStart);       // begins on the side facing the visitor
+      this.glow.set(q > 0.2 ? Math.min(1.0001, (q - 0.2) / 1.5) : -1, this.glowStart);       // begins on the side facing the visitor
       // the meaning, read while the tumbler is still held over: it does not leak
-      if (q > 0.9 && s.successLine < 1) store.set({ successLine: 1 });
-      if (q > 2.5 && s.successLine < 2) store.set({ successLine: 2 });
-      if (q > 4.2 && !s.ending) { this.tiltTarget.set(0, 0); this.tiltK = 1.6; }
-      if (q > 4.2 && angle < 0.01 && !this.uprightAt) this.uprightAt = q;
+      if (q > 0.4 && s.successLine < 1) store.set({ successLine: 1 });
+      if (q > 1.3 && s.successLine < 2) store.set({ successLine: 2 });
+      if (q > 1.0 && !s.ending) { this.tiltTarget.set(0, 0); this.tiltK = 2.2; }      // set down while the words are read
+      if (q > 1.0 && angle < 0.01 && !this.uprightAt) this.uprightAt = q;
       if (this.uprightAt && q > this.uprightAt + 0.3 && !this.sheenStart) this.sheenStart = q;
       if (this.sheenStart) {
         const k = (q - this.sheenStart) / 3.2;
@@ -625,8 +628,8 @@ export class Stage {
         if (k >= 1 && !s.ended) store.set({ ended: true });
       }
       // the explanation steps aside first, then the closing words arrive
-      if (this.uprightAt && q > this.uprightAt + 0.9 && !s.successOut) { store.set({ successOut: true }); this.outAt = q; }
-      if (this.outAt && q > this.outAt + 1.2 && !s.ending) store.set({ ending: true });
+      if (q > 2.8 && !s.successOut) { store.set({ successOut: true }); this.outAt = q; }
+      if (this.outAt && q > this.outAt + 0.5 && !s.ending) store.set({ ending: true });      // first closing line at about 3.6 s
     }
     // the leak follows the real state: lid openness, how deep the seal sits, and gravity in the tumbler's frame
     const gLocal = new THREE.Vector3(0, -1, 0).applyQuaternion(this.pivot.quaternion.clone().invert());
@@ -656,6 +659,16 @@ export class Stage {
       this.guide.add(tick);
     }
     this.guideAngle = a;
+  }
+
+  // keeps the small drag hint over the middle of the tumbler
+  placeHint() {
+    const el = document.getElementById('tilt-hint');
+    if (!el) return;
+    const v = new THREE.Vector3(0, this.pivot.position.y, 0).project(this.camera);
+    const b = this.renderer.domElement.getBoundingClientRect();
+    el.style.left = ((v.x + 1) / 2) * b.width + 'px';
+    el.style.top = ((1 - v.y) / 2) * b.height + 'px';
   }
 
   updateGuide(dt, step) {
@@ -694,6 +707,7 @@ export class Stage {
     this.updateLid(dt);
     this.updateTilt(dt);
     this.updateGuide(dt, store.get().step);
+    if (store.get().step === 3) this.placeHint();
     this.scene.updateMatrixWorld();
     this.updateSurface();
     this.updateWater(dt, t);
@@ -701,7 +715,7 @@ export class Stage {
     const st = store.get();
     const wide = this.narrow && (step === 3 || step === 4 || (step === 6 && !st.ending));
     // success: lean in toward the joint, then step back; ending: make room for the words
-    this.emph = damp(this.emph, step === 6 && this.seq < 4.2 ? 1 : 0, step === 6 && this.seq < 4.2 ? 1.6 : 1.1, dt);
+    this.emph = damp(this.emph, step === 6 && this.seq < 1.0 ? 1 : 0, step === 6 && this.seq < 1.0 ? 2.2 : 1.4, dt);
     this.endK = damp(this.endK, st.ending ? 1 : 0, 1.1, dt);
     this.zoom = damp(this.zoom, wide ? 1.22 : 1, 2.4, dt);
     this.placeCamera();

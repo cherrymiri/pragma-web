@@ -55,12 +55,12 @@ export default function App() {
   let meaning = [], prompt = '', sub = '';
   if (s.step === 1) meaning = ['사랑을 원하는 만큼 담아보세요.'];
   if (s.step === 2) { meaning = ['서로 다른 모양을, 천천히 맞춰보세요.']; prompt = '뚜껑을 가져와 돌려 닫아보세요.'; }
-  if (s.step === 3) { meaning = ['이제, 얼마나 맞춰졌는지 확인해보세요.']; prompt = '텀블러를 기울여보세요.'; }
+  if (s.step === 3) { meaning = ['이제, 얼마나 맞춰졌는지 확인해보세요.']; prompt = coarse ? '텀블러를 손가락으로 누른 채 움직여 기울여보세요.' : '텀블러를 클릭한 채 드래그해 기울여보세요.'; }
   if (s.step === 4) { if (first) meaning = ['아직 틈이 남아 있어요.']; else prompt = s.leakLess ? '전보다 틈이 줄었어요.' : '아직 틈이 남아 있어요.'; }
   if (s.step === 5) { if (first) meaning = ['아직 틈이 남아 있어요.', '조금 더 맞춰볼까요?']; else prompt = '조금 더 맞춰볼까요?'; }
   const adjusting = (s.step === 2 || s.step === 5) && s.lidAligned;
-  if (adjusting) sub = coarse ? '뚜껑을 좌우로 밀어 돌려보세요' : '휠을 아래로 굴려 돌려보세요';
-  if (s.step === 3 && !s.checking) sub = coarse ? '텀블러를 옆으로 밀어 표시된 곳까지 기울여요' : '텀블러를 잡고 옆으로 끌어 표시된 곳까지 기울여요';
+  if (adjusting) sub = coarse ? '화면을 좌우로 밀어 뚜껑을 돌려보세요.' : '마우스 휠을 굴려 뚜껑을 조절해 보세요.';
+  if (s.step === 3 && !s.checking) sub = '표시된 곳까지 기울이면 확인이 시작돼요.';
   const canClose = s.step === 1 && s.waterLevel >= 0.02;
 
   return (
@@ -73,6 +73,9 @@ export default function App() {
         </nav>
       )}
       <div className={'veil' + (veil ? ' is-on' : '')} />
+      {s.step === 3 && !s.tiltTouched && !s.checking && (
+        <div id="tilt-hint" className={'tilt-hint' + (coarse ? ' is-touch' : '')} aria-hidden="true"><span className="tilt-hint-trail" /><span className="tilt-hint-dot" /></div>
+      )}
       <header className="hud-top">
         <h1>PRAGMA</h1>
         <p className="subtitle">오래된 사랑</p>

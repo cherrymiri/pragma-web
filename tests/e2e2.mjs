@@ -45,6 +45,11 @@ async function bringLid(p) {
   await p.mouse.move(mx, my - 60);
 }
 const wheelTo = async (p, dir, n, dy = 100) => { await p.mouse.move(480, 200); for (let i = 0; i < n; i++) { await p.mouse.wheel(0, dir * dy); await wait(p, 15); } await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; }); };
+async function closeFully(p) {
+  await p.mouse.move(480, 200);
+  for (let k = 0; k < 80 && (await st(p)).lidLock < 0.999; k++) { for (let i = 0; i < 3; i++) { await p.mouse.wheel(0, 100); await wait(p, 15); } await wait(p, 150); }
+  await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; });
+}
 async function tiltBy(p, px) {
   const [x, y] = await screen(p, [0, 0.1, 0]);
   await p.mouse.move(x, y); await p.mouse.down();
@@ -67,11 +72,15 @@ async function journeyMouse(browser) {
   ok(true, 'nozzle retired');
   await bringLid(p);
   ok(!(await texts(p)).includes('기울여 확인하기'), 'no tilt button until turned');
+  ok((await prompt(p)).includes('마우스 휠을 굴려 뚜껑을 조절해 보세요.') && !(await prompt(p)).includes('아래로'), 'wheel hint has no direction');
   await wheelTo(p, 1, 4);
+  ok((await st(p)).lidLock < 0.25, 'a few wheel notches do not close it', (await st(p)).lidLock.toFixed(3));
   ok((await texts(p)).includes('기울여 확인하기'), 'tilt button after a small turn', (await st(p)).lidLock.toFixed(3));
   const lockA = (await st(p)).lidLock, volA = await p.evaluate(() => window.__PRAGMA_STAGE.volume);
   await tiltBtn(p);
-  ok((await prompt(p)).includes('텀블러를 기울여보세요'), 'prompt: tilt');
+  ok((await prompt(p)).includes('클릭한 채 드래그해 기울여보세요'), 'prompt: tilt says click and drag');
+  ok(await p.isVisible('#tilt-hint'), 'drag hint shown');
+  ok(await p.evaluate(() => window.__PRAGMA_STAGE.tilt.length() < 1e-3), 'the tumbler does not tilt by itself');
   await tiltBy(p, 130);                     // a modest lean
   await wait(p, 2200);
   let s = await st(p);
@@ -118,7 +127,7 @@ async function journeyMouse(browser) {
   await step(p, 4);
   await step(p, 5);
   ok(true, '94% closed still leaks');
-  await wheelTo(p, 1, 20);
+  await closeFully(p);
   ok(Math.abs((await st(p)).lidLock - 1) < 1e-6, 'hard stop fully closed');
   await tiltBtn(p);
   await tiltBy(p, 500);
@@ -143,6 +152,7 @@ async function journeyMouse(browser) {
   await p.screenshot({ path: shots + 'a7-end.png' });
   await noNumbers(p, 'end');
   await until(p, () => window.__PRAGMA.get().ending);
+  ok(await p.evaluate(() => window.__PRAGMA_STAGE.seq < 3.8), 'ending begins within about 3.5 s of the verdict', (await p.evaluate(() => window.__PRAGMA_STAGE.seq)).toFixed(2));
   ok((await st(p)).successOut && !(await p.$('.success')), 'success meaning gone before the ending');
   const end = await p.evaluate(() => [...document.querySelectorAll('.ending .ko, .ending .en')].map((e) => e.textContent));
   ok(JSON.stringify(end) === JSON.stringify(['같아질 필요는 없어,', 'We don’t need to become the same,', '서로의 모양을 배우면 되니까.', 'we just need to learn each other’s shape.']), 'ending lines exact');
@@ -179,7 +189,10 @@ async function journeyFull(browser) {
   for (let i = 0; i < 30; i++) { await p.mouse.wheel(0, 4); await wait(p, 6); }
   await wait(p, 700);
   ok((await st(p)).lidLock > 0.005, 'small two-finger deltas turn the lid', (await st(p)).lidLock.toFixed(3));
-  for (let i = 0; i < 260; i++) { await p.mouse.wheel(0, 14); await wait(p, 4); }
+  for (let i = 0; i < 70; i++) { await p.mouse.wheel(0, 40); await wait(p, 4); }      // one fast fling with momentum
+  await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; });
+  ok((await st(p)).lidLock < 0.3, 'one trackpad fling does not close it', (await st(p)).lidLock.toFixed(3));
+  for (let k = 0; k < 120 && (await st(p)).lidLock < 0.999; k++) { for (let i = 0; i < 20; i++) { await p.mouse.wheel(0, 14); await wait(p, 4); } await wait(p, 120); }
   await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; });
   ok((await st(p)).lidLock > 0.999, 'trackpad reaches the stop', (await st(p)).lidLock.toFixed(3));
   const y = (await st(p)).lidPosition.split(',')[1];

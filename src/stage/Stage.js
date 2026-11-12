@@ -450,7 +450,7 @@ export class Stage {
 
   // the lid can only run a little ahead of where it visibly is, so a trackpad fling or a fast wheel spin
   // cannot close it in one go: it takes several deliberate turns, like a real screw lid
-  addTurns(d) { this.turnsTarget = clamp(this.turnsTarget + d, Math.max(0, this.turns - 0.28), Math.min(FREE_TURNS, this.turns + 0.28)); }
+  addTurns(d) { this.turnsTarget = clamp(this.turnsTarget + d, Math.max(0, this.turns - 0.22), Math.min(FREE_TURNS, this.turns + 0.22)); }
 
   wheel(e) {
     e.preventDefault();
@@ -495,7 +495,7 @@ export class Stage {
       }
     } else if (s.lidMode === 'aligned') {
       const want = damp(this.turns, this.turnsTarget, 9, dt);
-      this.turns += clamp(want - this.turns, -1.0 * dt, 1.0 * dt);   // never faster than one turn a second
+      this.turns += clamp(want - this.turns, -0.7 * dt, 0.7 * dt);   // never faster than 0.7 turn a second
       if (Math.abs(this.turns - this.turnsTarget) < 1e-4) this.turns = this.turnsTarget;
       sound.twist(Math.abs(this.turns - (this.turnsPrev ?? this.turns)) / Math.max(dt, 1e-3));
       this.turnsPrev = this.turns;
@@ -629,7 +629,7 @@ export class Stage {
       }
       // the explanation steps aside first, then the closing words arrive
       if (q > 2.8 && !s.successOut) { store.set({ successOut: true }); this.outAt = q; }
-      if (this.outAt && q > this.outAt + 0.5 && !s.ending) store.set({ ending: true });      // first closing line at about 3.6 s
+      if (this.outAt && q > this.outAt + 0.5 && !s.ending) { this.endingAt = q; store.set({ ending: true }); }      // first closing line at about 3.6 s
     }
     // the leak follows the real state: lid openness, how deep the seal sits, and gravity in the tumbler's frame
     const gLocal = new THREE.Vector3(0, -1, 0).applyQuaternion(this.pivot.quaternion.clone().invert());

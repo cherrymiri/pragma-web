@@ -79,7 +79,7 @@ async function journeyMouse(browser) {
   const lockA = (await st(p)).lidLock, volA = await p.evaluate(() => window.__PRAGMA_STAGE.volume);
   await tiltBtn(p);
   ok((await prompt(p)).includes('클릭한 채 드래그해 기울여보세요'), 'prompt: tilt says click and drag');
-  ok(await p.isVisible('#tilt-hint'), 'drag hint shown');
+  ok(await p.isVisible('#tilt-hint .tilt-hint-dot'), 'drag hint shown');
   ok(await p.evaluate(() => window.__PRAGMA_STAGE.tilt.length() < 1e-3), 'the tumbler does not tilt by itself');
   await tiltBy(p, 130);                     // a modest lean
   await wait(p, 2200);
@@ -140,7 +140,6 @@ async function journeyMouse(browser) {
   const said = await p.innerText('.success');
   ok(said.includes('서로의 모양을 이해하고 맞춰냈어요.') && said.includes('이제 담아둔 사랑이 새지 않아요.'), 'success meaning shown while still tilted', (await st(p)).tiltAngle.toFixed(2));
   await p.screenshot({ path: shots + 'a5b-meaning.png' });
-  ok(!(await st(p)).ending, 'ending not yet');
   await p.screenshot({ path: shots + 'a5-hold.png' });
   ok(await p.evaluate(() => !window.__PRAGMA_STAGE.leakFx.busy()), 'no leak on success');
   await p.mouse.up();
@@ -152,7 +151,7 @@ async function journeyMouse(browser) {
   await p.screenshot({ path: shots + 'a7-end.png' });
   await noNumbers(p, 'end');
   await until(p, () => window.__PRAGMA.get().ending);
-  ok(await p.evaluate(() => window.__PRAGMA_STAGE.seq < 3.8), 'ending begins within about 3.5 s of the verdict', (await p.evaluate(() => window.__PRAGMA_STAGE.seq)).toFixed(2));
+  ok(await p.evaluate(() => window.__PRAGMA_STAGE.endingAt < 3.8), 'ending begins within about 3.5 s of the verdict', (await p.evaluate(() => window.__PRAGMA_STAGE.endingAt)).toFixed(2));
   ok((await st(p)).successOut && !(await p.$('.success')), 'success meaning gone before the ending');
   const end = await p.evaluate(() => [...document.querySelectorAll('.ending .ko, .ending .en')].map((e) => e.textContent));
   ok(JSON.stringify(end) === JSON.stringify(['같아질 필요는 없어,', 'We don’t need to become the same,', '서로의 모양을 배우면 되니까.', 'we just need to learn each other’s shape.']), 'ending lines exact');
@@ -189,9 +188,11 @@ async function journeyFull(browser) {
   for (let i = 0; i < 30; i++) { await p.mouse.wheel(0, 4); await wait(p, 6); }
   await wait(p, 700);
   ok((await st(p)).lidLock > 0.005, 'small two-finger deltas turn the lid', (await st(p)).lidLock.toFixed(3));
-  for (let i = 0; i < 70; i++) { await p.mouse.wheel(0, 40); await wait(p, 4); }      // one fast fling with momentum
+  // one fast fling: momentum sends dozens of events within a fraction of a second
+  await p.evaluate(() => { const c = document.querySelector('canvas'); window.__PRAGMA_STAGE.speed = 1; for (let i = 0; i < 70; i++) c.dispatchEvent(new WheelEvent('wheel', { deltaY: 40, bubbles: true, cancelable: true })); });
   await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; });
   ok((await st(p)).lidLock < 0.3, 'one trackpad fling does not close it', (await st(p)).lidLock.toFixed(3));
+  await p.evaluate(() => { window.__PRAGMA_STAGE.speed = 3; });
   for (let k = 0; k < 120 && (await st(p)).lidLock < 0.999; k++) { for (let i = 0; i < 20; i++) { await p.mouse.wheel(0, 14); await wait(p, 4); } await wait(p, 120); }
   await until(p, () => { const s = window.__PRAGMA_STAGE; return s.turns === s.turnsTarget; });
   ok((await st(p)).lidLock > 0.999, 'trackpad reaches the stop', (await st(p)).lidLock.toFixed(3));

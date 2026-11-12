@@ -25,7 +25,7 @@ async function open(browser, opts) {
   const p = await ctx.newPage();
   p.errs = []; p.on('pageerror', (e) => p.errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && p.errs.push(m.text()));
   await p.goto(url); await until(p, () => window.__PRAGMA?.get().ready);
-  await p.click('.opening-start'); await wait(p, 1200);
+  await p.click('.op-btn'); await wait(p, 1200);
   await p.evaluate((s) => { window.__PRAGMA_STAGE.speed = s; }, SPEED);
   await wait(p, 600);
   return { ctx, p };

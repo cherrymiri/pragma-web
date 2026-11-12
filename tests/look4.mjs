@@ -10,7 +10,7 @@ const go = (p, a) => p.evaluate((a)=>{const s=window.__PRAGMA_STAGE;s.turns=s.tu
 // opening
 let p = await page({viewport:{width:1280,height:800}}); await p.waitForTimeout(1500); await p.screenshot({path:out+'o-pc.png'});
 let ph = await page({...devices['iPhone 14'], deviceScaleFactor: 1}); await ph.waitForTimeout(1500); await ph.screenshot({path:out+'o-ph.png'}); await ph.close();
-await p.click('.opening-start'); await p.waitForTimeout(1300); await p.screenshot({path:out+'o-after.png'});
+await p.click('.op-btn'); await p.waitForTimeout(1300); await p.screenshot({path:out+'o-after.png'});
 for (const [name,lock] of (process.argv[2]==='end'?[]:[['A',0.05],['B',0.5],['C',0.94]])) {
   await prep(p, lock); await p.waitForFunction(()=>window.__PRAGMA.get().lidAligned,{timeout:60000}); await go(p,1.25);
   await p.waitForFunction(()=>window.__PRAGMA.get().step===4,{timeout:60000});
@@ -29,6 +29,6 @@ for (const t of [0.6,1.3,1.9,2.4]) { await seqAt(p,t); await p.screenshot({path:
 await p.evaluate(()=>{window.__PRAGMA_STAGE.speed=2});
 await p.waitForFunction(()=>window.__PRAGMA.get().ending,{timeout:90000}); await p.waitForTimeout(3500); await p.screenshot({path:out+'e-pc.png'});
 ph = await page({...devices['iPhone 14'], deviceScaleFactor: 1});
-await ph.click('.opening-start'); await prep(ph,1); await ph.waitForFunction(()=>window.__PRAGMA.get().lidAligned,{timeout:60000}); await go(ph,1.65);
+await ph.click('.op-btn'); await prep(ph,1); await ph.waitForFunction(()=>window.__PRAGMA.get().lidAligned,{timeout:60000}); await go(ph,1.65);
 await ph.waitForFunction(()=>window.__PRAGMA.get().ending,{timeout:120000}); await ph.evaluate(()=>{window.__PRAGMA_STAGE.speed=1}); await ph.waitForTimeout(6000); await ph.screenshot({path:out+'e-ph.png'});
 await b.close();

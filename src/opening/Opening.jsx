@@ -1,40 +1,31 @@
 import { useEffect, useState } from 'react';
-import '@fontsource/cormorant-garamond/400.css';
-import '@fontsource/cormorant-garamond/500.css';
 import './opening.css';
 
-// Shared intro for every love in 〈When Love Responds〉: a title column on the left, the meaning and how to take part on the right.
-// Pass the words; layout and motion stay the same. accent sets the one colour that belongs to this love.
-export default function Opening({ visible, eyebrow = 'WHEN LOVE RESPONDS', title, subtitle, description = [], howLabel = 'HOW TO EXPERIENCE', how = [], startLabel = '체험 시작', ready = true, onStart, accent = '#9fc9e3' }) {
+// The shared 〈When Love Responds〉 opening, the same system as EROS and LUDUS:
+// kicker, serif title, Korean subtitle, rule, description, guide, start button — centred, revealed in sequence.
+// Each love only changes its words and its colours (opening.css).
+export default function Opening({ visible, kicker = 'WHEN LOVE RESPONDS', title, subtitle, description = [], guide = [], startLabel = '체험 시작하기', ready = true, onStart, label }) {
   const [shown, setShown] = useState(visible);
   useEffect(() => {
     if (visible) { setShown(true); return; }
-    const t = setTimeout(() => setShown(false), 1000);
+    const t = setTimeout(() => setShown(false), 900);
     return () => clearTimeout(t);
   }, [visible]);
   if (!shown) return null;
+  // the last two words of each line stay together, so a narrow screen never leaves one word on its own
+  const glue = (l) => l.replace(/ (\S+)$/, '\u00a0$1');
+  const lines = (arr) => arr.map((l, i) => <span key={l}>{i > 0 && <br />}{glue(l)}</span>);
   return (
-    <section className={'opening' + (visible ? ' is-in' : ' is-out')} style={{ '--accent': accent }} aria-hidden={!visible}>
-      <header className="opening-title-col">
-        <p className="opening-eyebrow">{eyebrow}</p>
-        <h1 className="opening-title">{title}</h1>
-        <p className="opening-subtitle">{subtitle}</p>
-        <span className="opening-mark" aria-hidden="true" />
-      </header>
-      <div className="opening-body">
-        <div className="opening-desc">
-          {description.map((d) => <p key={d}>{d}</p>)}
-        </div>
-        <div className="opening-how-block">
-          <p className="opening-label">{howLabel}</p>
-          <ul className="opening-how">
-            {how.map((d) => <li key={d}>{d}</li>)}
-          </ul>
-        </div>
+    <section className={'opening' + (visible ? '' : ' closing')} aria-label={label || `${title} 오프닝`} aria-hidden={!visible}>
+      <div className="op-inner">
+        <p className="op-kicker">{kicker}</p>
+        <h1 className="op-title">{title}</h1>
+        <p className="op-sub">{subtitle}</p>
+        <i className="op-rule" aria-hidden="true" />
+        <p className="op-desc">{lines(description)}</p>
+        <p className="op-guide">{lines(guide)}</p>
+        <button type="button" className="op-btn" onClick={onStart} disabled={!ready || !visible}>{startLabel}</button>
       </div>
-      <button type="button" className="opening-start" onClick={onStart} disabled={!ready || !visible}>
-        <span>{startLabel}</span><span className="opening-arrow" aria-hidden="true">→</span>
-      </button>
     </section>
   );
 }

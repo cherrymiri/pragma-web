@@ -1,0 +1,14 @@
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url); const { chromium } = require('playwright');
+const b = await chromium.launch({ args: ['--use-angle=swiftshader','--enable-webgl','--ignore-gpu-blocklist','--enable-unsafe-swiftshader'] });
+const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } })).newPage();
+const errs = []; p.on('pageerror', (e) => errs.push(e.message));
+await p.goto('http://localhost:4176/'); await p.waitForFunction(() => window.__PRAGMA?.get().ready, { timeout: 60000 });
+await p.waitForTimeout(2300);
+await p.click('.op-btn'); await p.waitForTimeout(1300);
+const gone = !(await p.$('.opening'));
+const bb = await p.locator('.pour').boundingBox();
+await p.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await p.mouse.down();
+await p.waitForFunction(() => window.__PRAGMA.get().waterLevel > 0.03, { timeout: 60000 }); await p.mouse.up();
+console.log(JSON.stringify({ openingGone: gone, step: (await p.evaluate(() => window.__PRAGMA.get().step)), poured: true, closeBtn: await p.isVisible('text=뚜껑 닫기'), errs }));
+await b.close();

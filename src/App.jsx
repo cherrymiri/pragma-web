@@ -50,10 +50,15 @@ export default function App() {
   }, []);
 
   const full = s.waterLevel >= 1;
-  const PROMPTS = { 1: '사랑을 원하는 만큼 따라보세요.', 2: '뚜껑을 가져와 돌려 닫아보세요.', 3: '텀블러를 기울여보세요.', 4: '아직 틈이 남아 있어요.', 5: '조금 더 맞춰볼까요?', 6: '' };
-  const prompt = PROMPTS[s.step];
+  // meaning: what the gesture stands for (the larger line); prompt and sub: what to do
+  const first = s.leakCount <= 1;
+  let meaning = [], prompt = '', sub = '';
+  if (s.step === 1) meaning = ['사랑을 원하는 만큼 담아보세요.'];
+  if (s.step === 2) { meaning = ['서로 다른 모양을, 천천히 맞춰보세요.']; prompt = '뚜껑을 가져와 돌려 닫아보세요.'; }
+  if (s.step === 3) { meaning = ['이제, 얼마나 맞춰졌는지 확인해보세요.']; prompt = '텀블러를 기울여보세요.'; }
+  if (s.step === 4) { if (first) meaning = ['아직 틈이 남아 있어요.']; else prompt = s.leakLess ? '전보다 틈이 줄었어요.' : '아직 틈이 남아 있어요.'; }
+  if (s.step === 5) { if (first) meaning = ['아직 틈이 남아 있어요.', '조금 더 맞춰볼까요?']; else prompt = '조금 더 맞춰볼까요?'; }
   const adjusting = (s.step === 2 || s.step === 5) && s.lidAligned;
-  let sub = '';
   if (adjusting) sub = coarse ? '뚜껑을 좌우로 밀어 돌려보세요' : '휠을 아래로 굴려 돌려보세요';
   if (s.step === 3 && !s.checking) sub = coarse ? '텀블러를 옆으로 밀어 표시된 곳까지 기울여요' : '텀블러를 잡고 옆으로 끌어 표시된 곳까지 기울여요';
   const canClose = s.step === 1 && s.waterLevel >= 0.02;
@@ -80,7 +85,18 @@ export default function App() {
         </div>
       )}
       <div className={'hud-bottom' + (s.ending ? ' is-ending' : '')}>
-        <p className="prompt" aria-live="polite" key={prompt}>{prompt}</p>
+        {s.step === 6 && s.successLine > 0 && !s.ending && (
+          <div className={'success' + (s.successOut ? ' is-out' : '')} aria-live="polite">
+            <p>서로의 모양을 이해하고 맞춰냈어요.</p>
+            {s.successLine > 1 && <p>이제 담아둔 사랑이 새지 않아요.</p>}
+          </div>
+        )}
+        {meaning.length > 0 && (
+          <div className="meaning" key={meaning.join('|')} aria-live="polite">
+            {meaning.map((m, i) => <p key={m} className={meaning.length > 1 && i === 0 ? 'was' : ''}>{m}</p>)}
+          </div>
+        )}
+        <p className="prompt" key={prompt}>{prompt}</p>
         <p className="sub" key={sub || 'none'}>{sub}</p>
         <div className="actions">
           {s.step === 1 && (

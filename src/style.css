@@ -12,7 +12,7 @@ body { font-family: 'Pretendard Variable', Pretendard, system-ui, sans-serif; co
 h1 { margin: 0; font-size: clamp(17px, 2.1vh, 21px); font-weight: 500; letter-spacing: .42em; text-indent: .42em; }
 .subtitle { margin: 7px 0 0; font-size: 13px; color: var(--dim); letter-spacing: .12em; }
 .hud-bottom { bottom: max(30px, calc(env(safe-area-inset-bottom) + 16px)); padding: 0 20px; }
-.prompt { margin: 0; font-size: 15px; letter-spacing: .01em; animation: rise .7s ease both; }
+.prompt { margin: 0; font-size: 15px; letter-spacing: .01em; color: rgba(233, 236, 239, .84); animation: rise .7s ease both; }
 .sub { margin: 6px 0 0; min-height: 18px; font-size: 13px; color: var(--dim); animation: rise .7s ease both; }
 .actions { display: flex; justify-content: center; gap: 10px; min-height: 52px; margin-top: 12px; }
 .pour, .step-btn { pointer-events: auto; display: block; width: 148px; height: 52px; border-radius: 26px;
@@ -51,6 +51,17 @@ h1 { margin: 0; font-size: clamp(17px, 2.1vh, 21px); font-weight: 500; letter-sp
 .veil { position: absolute; inset: 0; z-index: 7; background: #0b0c0e; opacity: 0; pointer-events: none; transition: opacity .45s ease; }
 .veil.is-on { opacity: 1; pointer-events: auto; }
 @media (max-width: 640px) { .hud-top { text-align: left; left: max(20px, env(safe-area-inset-left)); } .hud-top h1 { text-indent: 0; } .corner-btn.quiet { display: none; } }
+.meaning { margin-bottom: 12px; display: grid; gap: 4px; }
+.meaning p { margin: 0; font-size: clamp(18px, 2.4vh, 22px); font-weight: 300; letter-spacing: .02em; color: #eef3f7; word-break: keep-all;
+  opacity: 0; animation: settle 1.2s cubic-bezier(.2,.6,.2,1) both; }
+.meaning p.was { font-size: 14px; color: rgba(214, 228, 238, .6); }
+.meaning p + p { animation-delay: .9s; }
+.success { display: grid; gap: 10px; margin-bottom: 8px; transition: opacity 1s ease, transform 1s ease; }
+.success p { margin: 0; font-size: clamp(21px, 3vh, 27px); font-weight: 300; letter-spacing: .02em; line-height: 1.45; color: #f2f6f9; word-break: keep-all;
+  opacity: 0; animation: settle 1.4s cubic-bezier(.2,.6,.2,1) both; }
+.success p + p { color: #cfe6f4; }
+.success.is-out { opacity: 0; transform: translateY(-6px); }
+.hud-bottom .prompt:empty, .hud-bottom .sub:empty { display: none; }
 @keyframes settle { from { opacity: 0; transform: translateY(6px); filter: blur(2px); } to { opacity: 1; transform: none; filter: none; } }
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: none; } }

@@ -16,7 +16,11 @@ const state = {
   sealWet: false,        // water is touching the lid's seal right now
   verdict: 'none',       // none | leak | sealed
   leakage: 0,            // 0 … 1, how loose the lid was at the last leak
-  ended: false,          // the closing moment has finished
+  ended: false,
+  successLine: 0,        // 0 none, 1 first line of the success meaning, 2 both
+  successOut: false,     // the success meaning has stepped aside for the ending
+  leakCount: 0,
+  leakLess: false,       // this leak was smaller than the one before          // the closing moment has finished
   ready: false,
   error: false,
 };

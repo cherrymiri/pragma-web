@@ -16,7 +16,7 @@ const until = (p, fn, arg, t = 120000) => p.waitForFunction(fn, arg, { timeout: 
 const step = (p, n) => until(p, (n) => window.__PRAGMA.get().step === n, n);
 const screen = (p, w) => p.evaluate(([x, y, z]) => { const s = window.__PRAGMA_STAGE; const v = s.lid.position.clone().set(x, y, z).project(s.camera); const b = s.renderer.domElement.getBoundingClientRect(); return [(v.x + 1) / 2 * b.width + b.left, (1 - v.y) / 2 * b.height + b.top]; }, w);
 const lidAt = async (p) => screen(p, await p.evaluate(() => { const q = window.__PRAGMA_STAGE.lid.position; return [q.x, q.y + 0.008, q.z]; }));
-const prompt = async (p) => (await p.textContent('.prompt')).trim();
+const prompt = async (p) => (await p.innerText('.hud-bottom')).trim();
 const texts = (p) => p.evaluate(() => [...document.querySelectorAll('button')].map((b) => b.textContent));
 const noNumbers = async (p, tag) => { const t = await p.evaluate(() => document.body.innerText); ok(!/\d|mL|%/.test(t), 'no numbers on screen: ' + tag); };
 
@@ -126,6 +126,12 @@ async function journeyMouse(browser) {
   await step(p, 6);
   s = await st(p);
   ok(s.verdict === 'sealed', 'closed lid holds with little water, without holding the mouse', s.tiltAngle.toFixed(2));
+  await until(p, () => window.__PRAGMA.get().successLine === 2);
+  await wait(p, 600);
+  const said = await p.innerText('.success');
+  ok(said.includes('서로의 모양을 이해하고 맞춰냈어요.') && said.includes('이제 담아둔 사랑이 새지 않아요.'), 'success meaning shown while still tilted', (await st(p)).tiltAngle.toFixed(2));
+  await p.screenshot({ path: shots + 'a5b-meaning.png' });
+  ok(!(await st(p)).ending, 'ending not yet');
   await p.screenshot({ path: shots + 'a5-hold.png' });
   ok(await p.evaluate(() => !window.__PRAGMA_STAGE.leakFx.busy()), 'no leak on success');
   await p.mouse.up();
@@ -137,6 +143,7 @@ async function journeyMouse(browser) {
   await p.screenshot({ path: shots + 'a7-end.png' });
   await noNumbers(p, 'end');
   await until(p, () => window.__PRAGMA.get().ending);
+  ok((await st(p)).successOut && !(await p.$('.success')), 'success meaning gone before the ending');
   const end = await p.evaluate(() => [...document.querySelectorAll('.ending .ko, .ending .en')].map((e) => e.textContent));
   ok(JSON.stringify(end) === JSON.stringify(['같아질 필요는 없어,', 'We don’t need to become the same,', '서로의 모양을 배우면 되니까.', 'we just need to learn each other’s shape.']), 'ending lines exact');
   await p.getByRole('button', { name: '다시 체험하기' }).click({ timeout: 30000 });

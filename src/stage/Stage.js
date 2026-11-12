@@ -350,12 +350,12 @@ export class Stage {
     this.guide.visible = false;
     this.pivot.quaternion.identity(); this.pivot.position.y = PIVOT_Y;
     this.nozzleLift = 0; this.agitation = 0; this.flow = 0;
-    this.emph = 0; this.endK = 0; this.lockWas = 0; this.sheenStart = 0; this.uprightAt = 0; this.glowStart = 0;
+    this.emph = 0; this.endK = 0; this.lockWas = 0; this.sheenStart = 0; this.uprightAt = 0; this.glowStart = 0; this.outAt = 0;
     sheen.uSheen.value = -1;
     sound.quiet();
     this.lid.position.copy(this.home);
     this.lid.rotation.y = FREE_TURNS * Math.PI * 2;
-    store.set({ step: 1, hasPoured: false, lidMode: 'home', lidAligned: false, lidLock: 0, verdict: 'none', ended: false, ending: false, canTilt: false, leakage: 0, checking: false, isPouring: false });
+    store.set({ step: 1, hasPoured: false, lidMode: 'home', lidAligned: false, lidLock: 0, verdict: 'none', ended: false, ending: false, canTilt: false, leakage: 0, checking: false, isPouring: false, successLine: 0, successOut: false, leakCount: 0, leakLess: false });
     this.applyLevel();
   }
 
@@ -613,15 +613,20 @@ export class Stage {
       if (q > 0.5 && q < 0.5 + dt * 1.5) sound.click(true);
       if (!this.glowStart) { const c = this.root.worldToLocal(this.camera.position.clone()); this.glowStart = Math.atan2(c.z, c.x) - 1.1; }
       this.glow.set(q > 0.5 ? Math.min(1.0001, (q - 0.5) / 1.9) : -1, this.glowStart);       // begins on the side facing the visitor
-      if (q > 2.6 && !s.ending) { this.tiltTarget.set(0, 0); this.tiltK = 1.25; }
-      if (q > 2.6 && angle < 0.01 && !this.uprightAt) this.uprightAt = q;
+      // the meaning, read while the tumbler is still held over: it does not leak
+      if (q > 0.9 && s.successLine < 1) store.set({ successLine: 1 });
+      if (q > 2.5 && s.successLine < 2) store.set({ successLine: 2 });
+      if (q > 4.2 && !s.ending) { this.tiltTarget.set(0, 0); this.tiltK = 1.6; }
+      if (q > 4.2 && angle < 0.01 && !this.uprightAt) this.uprightAt = q;
       if (this.uprightAt && q > this.uprightAt + 0.3 && !this.sheenStart) this.sheenStart = q;
       if (this.sheenStart) {
         const k = (q - this.sheenStart) / 3.2;
         sheen.uSheen.value = k < 1 ? -0.05 + k * 0.42 : -1;
         if (k >= 1 && !s.ended) store.set({ ended: true });
       }
-      if (this.uprightAt && q > this.uprightAt + 0.7 && !s.ending) store.set({ ending: true });
+      // the explanation steps aside first, then the closing words arrive
+      if (this.uprightAt && q > this.uprightAt + 0.9 && !s.successOut) { store.set({ successOut: true }); this.outAt = q; }
+      if (this.outAt && q > this.outAt + 1.2 && !s.ending) store.set({ ending: true });
     }
     // the leak follows the real state: lid openness, how deep the seal sits, and gravity in the tumbler's frame
     const gLocal = new THREE.Vector3(0, -1, 0).applyQuaternion(this.pivot.quaternion.clone().invert());
@@ -669,17 +674,18 @@ export class Stage {
   }
 
   beginLeak(lock) {
+    const before = this.leakCount ? this.leak : 1;
     this.leak = clamp(1 - lock / SEAL_LOCK, 0, 1);
     this.leakStartVol = this.volume;
     this.leakCount = (this.leakCount || 0) + 1;
     // the first time it is shown in full; later attempts are quicker so retrying never drags
-    this.leakHold = this.leakCount > 1 ? 1.9 : 2.6 + 0.8 * (1 - this.leak);
+    this.leakHold = this.leakCount > 1 ? 2.3 : 2.6 + 0.8 * (1 - this.leak);
     this.leakFx.resetTrail();
     this.seq = 0;
     this.tiltTarget.copy(this.tilt);
     this.pointer.intent = null; this.pointer.id = null;
     this.renderer.domElement.style.cursor = '';
-    store.set({ step: 4, verdict: 'leak', leakage: this.leak, checking: false });
+    store.set({ step: 4, verdict: 'leak', leakage: this.leak, checking: false, leakCount: this.leakCount, leakLess: this.leakCount > 1 && this.leak < before - 0.02 });
   }
 
   frame() {
@@ -695,7 +701,7 @@ export class Stage {
     const st = store.get();
     const wide = this.narrow && (step === 3 || step === 4 || (step === 6 && !st.ending));
     // success: lean in toward the joint, then step back; ending: make room for the words
-    this.emph = damp(this.emph, step === 6 && this.seq < 2.6 ? 1 : 0, step === 6 && this.seq < 2.6 ? 1.6 : 1.1, dt);
+    this.emph = damp(this.emph, step === 6 && this.seq < 4.2 ? 1 : 0, step === 6 && this.seq < 4.2 ? 1.6 : 1.1, dt);
     this.endK = damp(this.endK, st.ending ? 1 : 0, 1.1, dt);
     this.zoom = damp(this.zoom, wide ? 1.22 : 1, 2.4, dt);
     this.placeCamera();

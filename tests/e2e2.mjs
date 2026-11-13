@@ -81,7 +81,7 @@ async function journeyMouse(browser) {
   ok((await prompt(p)).includes('클릭한 채 드래그해 기울여보세요'), 'prompt: tilt says click and drag');
   ok(await p.isVisible('#tilt-hint .tilt-hint-dot'), 'drag hint shown');
   ok(await p.evaluate(() => window.__PRAGMA_STAGE.tilt.length() < 1e-3), 'the tumbler does not tilt by itself');
-  await tiltBy(p, 130);                     // a modest lean
+  await tiltBy(p, 60);                      // a modest lean
   await wait(p, 2200);
   let s = await st(p);
   ok(s.step === 3 && !s.checking, 'a modest lean does not start the check', s.tiltAngle.toFixed(2));

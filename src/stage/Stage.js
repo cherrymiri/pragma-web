@@ -402,9 +402,10 @@ export class Stage {
       // the same pull gives the same lean on any screen; it cannot go past the check angle
       const b = this.renderer.domElement.getBoundingClientRect();
       const lim = this.checkAngle || MAX_TILT;
-      const per = lim / (0.4 * Math.min(b.width, b.height));
+      // a short, comfortable pull (about a quarter of the screen's short side) reaches the check angle
+      const per = lim / Math.max(110, 0.24 * Math.min(b.width, b.height));
       let x = p.sx + (e.clientX - p.downX) * per;
-      let y = clamp(p.sy + (e.clientY - p.downY) * per, -MAX_TOWARD, MAX_TOWARD);
+      let y = clamp(p.sy + (e.clientY - p.downY) * per * 0.5, -MAX_TOWARD, MAX_TOWARD);   // sideways counts most
       const len = Math.hypot(x, y);
       if (len > lim) { x *= lim / len; y *= lim / len; }
       this.tiltTarget.set(x, y);
@@ -585,19 +586,23 @@ export class Stage {
     store.set({ tiltAngle: angle, sealWet: wet });
 
     if (s.step === 3) {
-      // a small sway hints that the tumbler can be tipped, until the visitor takes it
-      if (this.checkT < 0 && angle >= this.checkAngle - 0.035) {
-        // reached: hold it there, no more input needed
-        this.checkT = 0;
-        this.tiltTarget.copy(this.tilt).setLength(this.checkAngle);
+      // close enough (about 82% of the check angle, never under ~52°): the tumbler eases the rest of the way itself
+      const near = Math.max(0.9, this.checkAngle * 0.82);
+      if (this.checkT < 0 && angle >= near) {
+        this.checkT = 0; this.settled = false;
+        this.tiltTarget.copy(this.tilt.lengthSq() > 1e-8 ? this.tilt : this.tiltTarget).setLength(this.checkAngle);
+        this.tiltK = 3.2;                                   // a short, soft glide, no jump
         this.pointer.intent = null; this.pointer.id = null;
         this.renderer.domElement.style.cursor = '';
         sound.tick();
         store.set({ checking: true });
       }
       if (this.checkT >= 0) {
-        this.checkT += dt;
-        if (this.checkT >= 0.8) {
+        // the 0.8 s check starts once it has arrived at the check angle; it runs only once
+        if (!this.settled && angle >= this.checkAngle - 0.02) { this.settled = true; this.checkT = 0; this.tiltK = 7; }
+        if (this.settled) this.checkT += dt;
+        else if ((this.checkT += dt) > 2.5) { this.settled = true; this.checkT = 0; }   // safety: never waits forever
+        if (this.settled && this.checkT >= 0.8) {
           if (s.lidLock >= SEAL_LOCK) { this.seq = 0; store.set({ step: 6, verdict: 'sealed', checking: false }); }
           else this.beginLeak(s.lidLock);
           this.checkT = -2;

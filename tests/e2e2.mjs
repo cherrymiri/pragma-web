@@ -151,7 +151,7 @@ async function journeyMouse(browser) {
   await p.screenshot({ path: shots + 'a7-end.png' });
   await noNumbers(p, 'end');
   await until(p, () => window.__PRAGMA.get().ending);
-  ok(await p.evaluate(() => window.__PRAGMA_STAGE.endingAt < 3.8), 'ending begins within about 3.5 s of the verdict', (await p.evaluate(() => window.__PRAGMA_STAGE.endingAt)).toFixed(2));
+  ok(await p.evaluate(() => window.__PRAGMA_STAGE.endingAt > 4.8 && window.__PRAGMA_STAGE.endingAt < 6.2), 'ending begins about 5–6 s after the verdict', (await p.evaluate(() => window.__PRAGMA_STAGE.endingAt)).toFixed(2));
   ok((await st(p)).successOut && !(await p.$('.success')), 'success meaning gone before the ending');
   const end = await p.evaluate(() => [...document.querySelectorAll('.ending .ko, .ending .en')].map((e) => e.textContent));
   ok(JSON.stringify(end) === JSON.stringify(['같아질 필요는 없어,', 'We don’t need to become the same,', '서로의 모양을 배우면 되니까.', 'we just need to learn each other’s shape.']), 'ending lines exact');

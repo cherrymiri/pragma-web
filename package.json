@@ -1,7 +1,7 @@
 {
   "name": "pragma-web",
   "version": "1.0.0",
-  "description": "PRAGMA (오래된 사랑) — 〈When Love Responds, 사랑의 응답〉 interactive tumbler (React + Three.js)",
+  "description": "PRAGMA (맞춰가는 사랑) — 〈When Love Responds, 사랑의 응답〉 interactive tumbler (React + Three.js)",
   "private": true,
   "type": "module",
   "scripts": {

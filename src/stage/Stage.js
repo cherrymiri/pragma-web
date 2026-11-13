@@ -622,9 +622,11 @@ export class Stage {
       if (!this.glowStart) { const c = this.root.worldToLocal(this.camera.position.clone()); this.glowStart = Math.atan2(c.z, c.x) - 1.1; }
       this.glow.set(q > 0.2 ? Math.min(1.0001, (q - 0.2) / 1.5) : -1, this.glowStart);       // begins on the side facing the visitor
       // the meaning, read while the tumbler is still held over: it does not leak
-      if (q > 0.4 && s.successLine < 1) store.set({ successLine: 1 });
-      if (q > 1.3 && s.successLine < 2) store.set({ successLine: 2 });
-      if (q > 1.0 && !s.ending) { this.tiltTarget.set(0, 0); this.tiltK = 2.2; }      // set down while the words are read
+      // A (0–1 s): held over, the light runs round the joint, nothing leaks
+      // B (1–4.7 s): set down slowly while the two lines are read
+      if (q > 1.1 && s.successLine < 1) store.set({ successLine: 1 });
+      if (q > 2.3 && s.successLine < 2) store.set({ successLine: 2 });
+      if (q > 1.0 && !s.ending) { this.tiltTarget.set(0, 0); this.tiltK = 1.3; }
       if (q > 1.0 && angle < 0.01 && !this.uprightAt) this.uprightAt = q;
       if (this.uprightAt && q > this.uprightAt + 0.3 && !this.sheenStart) this.sheenStart = q;
       if (this.sheenStart) {
@@ -633,8 +635,9 @@ export class Stage {
         if (k >= 1 && !s.ended) store.set({ ended: true });
       }
       // the explanation steps aside first, then the closing words arrive
-      if (q > 2.8 && !s.successOut) { store.set({ successOut: true }); this.outAt = q; }
-      if (this.outAt && q > this.outAt + 0.5 && !s.ending) { this.endingAt = q; store.set({ ending: true }); }      // first closing line at about 3.6 s
+      // C: the lines fade, the water settles, then the closing words (first line at about 5.7 s)
+      if (q > 4.7 && !s.successOut) { store.set({ successOut: true }); this.outAt = q; }
+      if (this.outAt && q > this.outAt + 0.7 && !s.ending) { this.endingAt = q; store.set({ ending: true }); }
     }
     // the leak follows the real state: lid openness, how deep the seal sits, and gravity in the tumbler's frame
     const gLocal = new THREE.Vector3(0, -1, 0).applyQuaternion(this.pivot.quaternion.clone().invert());
@@ -720,7 +723,7 @@ export class Stage {
     const st = store.get();
     const wide = this.narrow && (step === 3 || step === 4 || (step === 6 && !st.ending));
     // success: lean in toward the joint, then step back; ending: make room for the words
-    this.emph = damp(this.emph, step === 6 && this.seq < 1.0 ? 1 : 0, step === 6 && this.seq < 1.0 ? 2.2 : 1.4, dt);
+    this.emph = damp(this.emph, step === 6 && this.seq < 1.0 ? 1 : 0, step === 6 && this.seq < 1.0 ? 2.2 : 0.9, dt);   // eases back gently while the words are read
     this.endK = damp(this.endK, st.ending ? 1 : 0, 1.1, dt);
     this.zoom = damp(this.zoom, wide ? 1.22 : 1, 2.4, dt);
     this.placeCamera();

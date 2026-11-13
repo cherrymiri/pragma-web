@@ -78,7 +78,7 @@ export default function App() {
       )}
       <header className="hud-top">
         <h1>PRAGMA</h1>
-        <p className="subtitle">오래된 사랑</p>
+        <p className="subtitle">맞춰가는 사랑</p>
       </header>
       {s.ending && (
         <div className="ending" lang="ko">
@@ -124,7 +124,7 @@ export default function App() {
       <Opening
         visible={intro}
         title="PRAGMA"
-        subtitle="오래된 사랑"
+        subtitle="맞춰가는 사랑"
         description={[
           '프라그마(Pragma)는 현실적인 이해와 조율을 통해 오래도록 이어가는 사랑을 말합니다.',
           '사랑은 처음부터 완벽하게 맞는 것이 아니라, 서로의 차이를 이해하고 함께할 방법을 찾아가는 과정입니다.',

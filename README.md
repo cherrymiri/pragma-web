@@ -1,4 +1,4 @@
-# PRAGMA — 오래된 사랑 · When Love Responds
+# PRAGMA — 맞춰가는 사랑 · When Love Responds
 
 졸업작품 〈When Love Responds, 사랑의 응답〉의 PRAGMA 인터랙티브 3D 웹입니다.
 오프닝, 물 따르기, 뚜껑 조절, 기울이기, 누수 판정과 재조절, 성공 연출, 엔딩까지 전체 흐름이 구현되어 있습니다.

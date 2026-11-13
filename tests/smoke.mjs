@@ -5,10 +5,12 @@ const p = await (await b.newContext({ viewport: { width: 1280, height: 720 } }))
 const errs = []; p.on('pageerror', (e) => errs.push(e.message));
 await p.goto('http://localhost:4176/'); await p.waitForFunction(() => window.__PRAGMA?.get().ready, { timeout: 60000 });
 await p.waitForTimeout(2300);
+const op = await p.evaluate(() => ({ sub: document.querySelector('.op-sub')?.textContent, desc: document.querySelector('.op-desc')?.textContent.includes('오래도록 이어가는 사랑을 말합니다') }));
+console.log('opening', JSON.stringify(op));
 await p.click('.op-btn'); await p.waitForTimeout(1300);
 const gone = !(await p.$('.opening'));
 const bb = await p.locator('.pour').boundingBox();
 await p.mouse.move(bb.x + bb.width / 2, bb.y + bb.height / 2); await p.mouse.down();
 await p.waitForFunction(() => window.__PRAGMA.get().waterLevel > 0.03, { timeout: 60000 }); await p.mouse.up();
-console.log(JSON.stringify({ openingGone: gone, step: (await p.evaluate(() => window.__PRAGMA.get().step)), poured: true, closeBtn: await p.isVisible('text=뚜껑 닫기'), errs }));
+console.log(JSON.stringify({ openingGone: gone, step: (await p.evaluate(() => window.__PRAGMA.get().step)), sub: await p.evaluate(() => document.body.innerText.includes('맞춰가는 사랑') && !document.body.innerText.includes('오래된 사랑')), title: await p.title(), poured: true, closeBtn: await p.isVisible('text=뚜껑 닫기'), errs }));
 await b.close();

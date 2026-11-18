@@ -24,21 +24,29 @@ export const sound = {
         noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
         const d = noise.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-        ch.pour = loop('bandpass', 700, 0.9);
-        ch.pourLow = loop('lowpass', 380, 1.2);
+        // 정수기에서 물줄기가 수면에 '쪼르륵' 떨어지는 소리: 일정한 높이의 둥근 물줄기 울림 (+ 가끔 작은 방울)
+        ch.pour = loop('bandpass', 650, 4);
+        ch.pourLow = loop('bandpass', 1300, 5);
         ch.twist = loop('bandpass', 4200, 2.2);
         ch.leak = loop('bandpass', 1900, 1.4);
       }
       ctx.resume?.();
     } catch { ctx = null; }
   },
-  // the pitch of a filling vessel rises as the air column above the water shortens
+  // a steady stream meeting the water surface: same pitch from start to finish, softly wavering
   pour(on, level) {
     if (!ctx) return;
-    const wob = 0.85 + Math.random() * 0.3;
-    to(ch.pour.g.gain, on ? 0.32 * wob : 0, on ? 0.05 : 0.12);
-    to(ch.pour.f.frequency, 560 + 1500 * level, 0.2);
-    to(ch.pourLow.g.gain, on ? 0.22 : 0, on ? 0.05 : 0.15);
+    const wob = 0.88 + Math.random() * 0.24;
+    to(ch.pour.g.gain, on ? 0.62 * wob : 0, on ? 0.06 : 0.12);
+    to(ch.pourLow.g.gain, on ? 0.16 * wob : 0, on ? 0.06 : 0.12);
+    const now = ctx.currentTime;
+    if (on && now > (this._bub || 0)) {                 // now and then a small round bubble
+      this._bub = now + 0.03 + Math.random() * 0.1;
+      const o = ctx.createOscillator(), g = ctx.createGain(), f0 = 300 + Math.random() * 500;
+      o.frequency.setValueAtTime(f0, now); o.frequency.linearRampToValueAtTime(f0 * 1.15, now + 0.04);
+      g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.035, now + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+      o.connect(g).connect(master); o.start(now); o.stop(now + 0.06);
+    }
   },
   twist(speed) {
     if (!ctx) return;
@@ -81,6 +89,35 @@ export const sound = {
     o.frequency.value = 1760;
     g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.05, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
     o.connect(g).connect(master); o.start(t); o.stop(t + 0.4);
+  },
+  // 엔딩: 살짝 어긋나 있던 두 음이 서로 맞춰져 맑은 완전5도가 되고, 끝에 유리 '팅' (맞춰가는 사랑)
+  ending() {
+    if (!ctx) return;
+    const t0 = ctx.currentTime + 0.08;
+    const out = ctx.createGain(); out.gain.value = 0.55;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 4800;
+    const len = Math.floor(ctx.sampleRate * 1.2), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3) * 0.5; }
+    const verb = ctx.createConvolver(); verb.buffer = ir;
+    const wet = ctx.createGain(); wet.gain.value = 0.4;
+    out.connect(lp); lp.connect(master); lp.connect(verb); verb.connect(wet); wet.connect(master);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0.0001, t0); env.gain.linearRampToValueAtTime(1, t0 + 0.25);
+    env.gain.setValueAtTime(1, t0 + 0.6); env.gain.setTargetAtTime(0.0001, t0 + 0.6, 0.62);
+    env.connect(out);
+    const tone = (f, a, tune) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(); g.gain.value = a;
+      if (tune) { o.frequency.setValueAtTime(f * 1.035, t0); o.frequency.setTargetAtTime(f, t0, 0.45); }
+      else o.frequency.value = f;
+      o.connect(g).connect(env); o.start(t0); o.stop(t0 + 3.2);
+    };
+    tone(293.66, 0.5); tone(587.33, 0.12); tone(440, 0.45, true);   // D4 + 그 옥타브, 어긋났다 맞춰지는 A4
+    const tg = t0 + 1.0;                                              // 유리 '팅' (D5)
+    [[587.33, 0.25, 2.2], [587.33 * 2.76, 0.05, 8]].forEach(([f, a, dec]) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001, tg); g.gain.linearRampToValueAtTime(a, tg + 0.003); g.gain.setTargetAtTime(0.0001, tg + 0.003, 1 / dec);
+      o.connect(g).connect(out); o.start(tg); o.stop(tg + 2);
+    });
   },
   quiet() { if (!ctx) return; ['pour', 'pourLow', 'twist', 'leak'].forEach((k) => to(ch[k].g.gain, 0, 0.1)); },
 };

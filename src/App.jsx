@@ -27,6 +27,7 @@ export default function App() {
   };
   useEffect(() => {
     if (!s.ending) return;
+    sound.ending();
     const t = setTimeout(() => setReplay(true), 4600);       // both lines in, then a moment of stillness
     return () => clearTimeout(t);
   }, [s.ending]);

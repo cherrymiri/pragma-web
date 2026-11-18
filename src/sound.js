@@ -1,4 +1,7 @@
-// Every sound is made here in the browser from filtered noise and short tones: no recordings, no licences.
+// Sounds are made here in the browser from filtered noise and short tones, except pouring water:
+// that is two real recordings (both CC0 on Freesound), trimmed into seamless loops and layered:
+//   pour_stream.wav  "Foley_WaterDispenser_Pour.wav" by MrFossy        freesound.org/s/521901
+//   pour_glass.wav   "water pour into glass_near_nm.wav" by Alex_hears_things  freesound.org/s/316686
 // Nothing plays until start() runs from the visitor's tap; if audio is unavailable, every call is silent.
 let ctx = null, master = null, noise = null;
 const ch = {};
@@ -10,6 +13,18 @@ function loop(filterType, freq, q, gain = 0) {
   src.connect(f).connect(g).connect(master);
   src.start(0, Math.random() * 2);
   return { f, g };
+}
+// A looping recording that sits silent until its gain is raised. Before it has loaded, it is simply quiet.
+function recording(url) {
+  const g = ctx.createGain(); g.gain.value = 0; g.connect(master);
+  fetch(url).then((r) => r.arrayBuffer()).then((data) => new Promise((ok, fail) => {
+    const p = ctx.decodeAudioData(data, ok, fail);
+    if (p && p.then) p.then(ok, fail);
+  })).then((buf) => {
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    src.connect(g); src.start(0, Math.random() * buf.duration);
+  }).catch(() => {});
+  return { g };
 }
 const to = (p, v, tau = 0.08) => { if (ctx) p.setTargetAtTime(v, ctx.currentTime, tau); };
 
@@ -24,30 +39,22 @@ export const sound = {
         noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
         const d = noise.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-        // 정수기에서 물줄기가 수면에 '쪼르륵' 떨어지는 소리: 일정한 높이의 둥근 물줄기 울림 (+ 가끔 작은 방울)
-        ch.pour = loop('bandpass', 650, 4);
-        ch.pourLow = loop('bandpass', 1300, 5);
+        // 정수기 물줄기(B) + 컵에 떨어지는 소리(D): 따르는 동안 끊김 없이 반복, 멈추면 부드럽게 꺼짐
+        ch.pour = recording('sfx/pour_stream.wav');
+        ch.pourLow = recording('sfx/pour_glass.wav');
         ch.twist = loop('bandpass', 4200, 2.2);
         ch.leak = loop('bandpass', 1900, 1.4);
       }
       ctx.resume?.();
     } catch { ctx = null; }
   },
-  // a steady stream meeting the water surface: same pitch from start to finish, softly wavering
+  // a steady stream from a water dispenser meeting the water in the cup: same pitch from start to finish
   pour(on, level) {
     if (!ctx) return;
-    const wob = 0.88 + Math.random() * 0.24;
-    to(ch.pour.g.gain, on ? 0.62 * wob : 0, on ? 0.06 : 0.12);
-    to(ch.pourLow.g.gain, on ? 0.16 * wob : 0, on ? 0.06 : 0.12);
-    const now = ctx.currentTime;
-    if (on && now > (this._bub || 0)) {                 // now and then a small round bubble
-      this._bub = now + 0.03 + Math.random() * 0.1;
-      const o = ctx.createOscillator(), g = ctx.createGain(), f0 = 300 + Math.random() * 500;
-      o.frequency.setValueAtTime(f0, now); o.frequency.linearRampToValueAtTime(f0 * 1.15, now + 0.04);
-      g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.035, now + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
-      o.connect(g).connect(master); o.start(now); o.stop(now + 0.06);
-    }
+    to(ch.pour.g.gain, on ? 0.35 : 0, on ? 0.06 : 0.15);
+    to(ch.pourLow.g.gain, on ? 0.28 : 0, on ? 0.06 : 0.15);
   },
+
   twist(speed) {
     if (!ctx) return;
     to(ch.twist.g.gain, Math.min(1, speed * 1.3) * 0.075, 0.04);

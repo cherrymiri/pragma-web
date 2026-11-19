@@ -43,7 +43,6 @@ export const sound = {
         ch.pour = recording('sfx/pour_stream.wav');
         ch.pourLow = recording('sfx/pour_glass.wav');
         ch.twist = loop('bandpass', 4200, 2.2);
-        ch.leak = loop('bandpass', 1900, 1.4);
       }
       ctx.resume?.();
     } catch { ctx = null; }
@@ -59,12 +58,9 @@ export const sound = {
     if (!ctx) return;
     to(ch.twist.g.gain, Math.min(1, speed * 1.3) * 0.075, 0.04);
   },
-  leak(q) {
-    if (!ctx) return;
-    const gurgle = 0.75 + Math.random() * 0.5;
-    to(ch.leak.g.gain, Math.min(1, q * 1.4) * 0.16 * gurgle, 0.06);
-    to(ch.leak.f.frequency, 1400 + 900 * q + Math.random() * 300, 0.1);
-  },
+  // a leak is heard only as its drops: no continuous rushing noise under them
+  leak() {},
+
   drip(big) {
     if (!ctx) return;
     const t = ctx.currentTime, o = ctx.createOscillator(), g = ctx.createGain();
@@ -126,5 +122,5 @@ export const sound = {
       o.connect(g).connect(out); o.start(tg); o.stop(tg + 2);
     });
   },
-  quiet() { if (!ctx) return; ['pour', 'pourLow', 'twist', 'leak'].forEach((k) => to(ch[k].g.gain, 0, 0.1)); },
+  quiet() { if (!ctx) return; ['pour', 'pourLow', 'twist'].forEach((k) => to(ch[k].g.gain, 0, 0.1)); },
 };

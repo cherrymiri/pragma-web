@@ -3,6 +3,7 @@
 //   pour_stream.wav  "Foley_WaterDispenser_Pour.wav" by MrFossy        freesound.org/s/521901
 //   pour_glass.wav   "water pour into glass_near_nm.wav" by Alex_hears_things  freesound.org/s/316686
 // Nothing plays until start() runs from the visitor's tap; if audio is unavailable, every call is silent.
+import { speakerOut } from './iosAudio.js';
 let ctx = null, master = null, noise = null;
 const ch = {};
 
@@ -35,7 +36,7 @@ export const sound = {
         const AC = window.AudioContext || window.webkitAudioContext;
         if (!AC) return;
         ctx = new AC();
-        master = ctx.createGain(); master.gain.value = 0.55; master.connect(ctx.destination);
+        master = ctx.createGain(); master.gain.value = 0.55; master.connect(speakerOut(ctx));
         noise = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
         const d = noise.getChannelData(0);
         for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;

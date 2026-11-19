@@ -53,6 +53,12 @@ h1 { margin: 0; font-size: clamp(17px, 2.1vh, 21px); font-weight: 500; letter-sp
 .veil { position: absolute; inset: 0; z-index: 7; background: #0b0c0e; opacity: 0; pointer-events: none; transition: opacity .45s ease; }
 .veil.is-on { opacity: 1; pointer-events: auto; }
 @media (max-width: 640px) { .hud-top { text-align: left; left: max(20px, env(safe-area-inset-left)); } .hud-top h1 { text-indent: 0; } .corner-btn.quiet { display: none; } }
+/* 휴대폰(터치): 갤러리 전체화면 버튼이 없으니 '다시 하기'는 오른쪽 끝, BACK TO GALLERY와 같은 줄.
+   제목은 그 줄 아래로 내려 서로 붙지 않게 */
+@media (max-width: 640px) and (hover: none) {
+  .hud-corner { right: max(14px, env(safe-area-inset-right, 0px)); }
+  .hud-top { top: max(62px, calc(env(safe-area-inset-top, 0px) + 54px)); }   /* 왼쪽 정렬 유지 (가운데는 물 나오는 꼭지 자리) */
+}
 .meaning { margin-bottom: 12px; display: grid; gap: 4px; }
 .meaning p { margin: 0; font-size: clamp(18px, 2.4vh, 22px); font-weight: 300; letter-spacing: .02em; color: #eef3f7; word-break: keep-all;
   opacity: 0; animation: settle 1.2s cubic-bezier(.2,.6,.2,1) both; }

@@ -98,7 +98,7 @@ export const sound = {
   ending() {
     if (!ctx) return;
     const t0 = ctx.currentTime + 0.08;
-    const out = ctx.createGain(); out.gain.value = 0.11;   // about as loud as the pouring water (was 0.55, ~14 dB louder than everything else)
+    const out = ctx.createGain(); out.gain.value = 0.155;   // ending at about -31 LUFS, the level shared by all six works;   // about as loud as the pouring water (was 0.55, ~14 dB louder than everything else)
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 4800;
     const len = Math.floor(ctx.sampleRate * 1.2), ir = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3) * 0.5; }
